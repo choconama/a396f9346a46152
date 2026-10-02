@@ -44,6 +44,7 @@ h1 small{font-size:14px;color:var(--muted);font-weight:400;margin-left:8px}
 label.chk{display:flex;gap:8px;align-items:center;cursor:pointer}
 #startRow{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
 #resumeBtn{font-size:14px}
+.route .cont{color:var(--accent2)}
 
 /* ---------- player */
 #player{position:fixed;inset:0;display:flex;flex-direction:column;background:#000}
@@ -134,6 +135,7 @@ html,body{-webkit-text-size-adjust:100%;touch-action:manipulation}
 
   <div id="startRow">
     <button id="startBtn" class="primary" disabled>再生開始</button>
+    <button id="restartBtn" class="hidden">最初から</button>
     <button id="resumeBtn" class="hidden"></button>
     <button id="cfgBtn2">⚙ 設定</button>
   </div>
@@ -848,17 +850,27 @@ openStored();
   $('skipCommon').checked = store.get('skipCommon') ?? true;
   $('skipCommon').onchange = () => store.set('skipCommon', $('skipCommon').checked);
 })();
+const progOf = id => store.get('prog:' + id);
 function refreshStart(){
+  const p = selected && progOf(selected.id);
   $('startBtn').disabled = !(game && selected);
-  const last = store.get('last');
-  const r = last && RT.ROUTES.find(x=>x.id===last.id);
-  if (game && r && last.step > 0){ $('resumeBtn').classList.remove('hidden'); $('resumeBtn').textContent = '続きから：' + r.name + '（' + (last.step+1) + '番目のシーン）'; }
+  $('startBtn').textContent = p ? '続きから再生（' + (p.step+1) + '番目のシーン）' : '再生開始';
+  $('restartBtn').classList.toggle('hidden', !(game && p));
+  if (p) $('skipCommon').checked = !p.common;
+  const lastId = store.get('lastRoute'); const lp = lastId && progOf(lastId);
+  const r = lp && RT.ROUTES.find(x=>x.id===lastId);
+  if (game && r && (!selected || selected.id !== lastId)){ $('resumeBtn').classList.remove('hidden'); $('resumeBtn').textContent = '前回の続き：' + r.name + '（' + (lp.step+1) + '番目のシーン）'; }
   else $('resumeBtn').classList.add('hidden');
+  document.querySelectorAll('.route').forEach(b => { const q = progOf(b.dataset.id); b.querySelector('.cont') && b.querySelector('.cont').remove();
+    if (q){ const t = document.createElement('span'); t.className='sub cont'; t.textContent = '▶ 途中（' + (q.step+1) + '番目のシーン）'; b.appendChild(t); } });
 }
 const SILENT_WAV = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
 function unlockAudio(){ for (const el of [bgmEl, voEl, ...Array.from({length:8},(_,i)=>seCh[i] || (seCh[i] = new Audio()))]){ try{ if (!el.src){ el.src = SILENT_WAV; } const p = el.play(); p && p.then(()=>{ if (el.src === SILENT_WAV) el.pause(); }).catch(()=>{}); }catch(e){} } }
-$('startBtn').onclick = () => { unlockAudio(); startRoute(selected, !$('skipCommon').checked, 0); };
-$('resumeBtn').onclick = () => { unlockAudio(); const l = store.get('last'); const r = RT.ROUTES.find(x=>x.id===l.id); startRoute(r, l.common, l.step); };
+$('startBtn').onclick = () => { unlockAudio(); const p = progOf(selected.id);
+  if (p) startRoute(selected, p.common, p.step, p.line); else startRoute(selected, !$('skipCommon').checked, 0, 0); };
+$('restartBtn').onclick = () => { if (!confirm('途中の記録を消して最初から再生しますか？')) return; unlockAudio(); store.set('prog:' + selected.id, null); startRoute(selected, !$('skipCommon').checked, 0, 0); };
+$('resumeBtn').onclick = () => { unlockAudio(); const id = store.get('lastRoute'); const p = progOf(id); const r = RT.ROUTES.find(x=>x.id===id); if (r && p) startRoute(r, p.common, p.step, p.line); };
+$('skipCommon').addEventListener('change', () => { if (selected && progOf(selected.id)) refreshStart(); });
 
 // ---------------------------------------------------------------- media
 const cv = $('cv'), ctx = cv.getContext('2d');
@@ -969,7 +981,7 @@ $('cfg').addEventListener('click', e => { if (e.target.id === 'cfg') $('cfg').cl
 function stopAudio(){ bgmEl.pause(); bgmName = null; for (const k in seCh) seCh[k].pause(); voEl.pause(); }
 
 // ---------------------------------------------------------------- playback
-const play = { auto:true, fast:false, token:0, advance:null, runner:null, steps:[], route:null, common:false, step:0 };
+const play = { seekState:{ on:false, loops:{} }, line:0, auto:true, fast:false, token:0, advance:null, runner:null, steps:[], route:null, common:false, step:0 };
 let curToken = 0;
 function waitAdvance(ms){
   return new Promise(res => {
@@ -980,10 +992,21 @@ function waitAdvance(ms){
 }
 function setAuto(on){ play.auto = on; $('bAuto').classList.toggle('on', on); $('bAuto').textContent = on ? '▶ オート' : '⏸ 手動'; if (on && play.advance && !play.voicePlaying) play.advance(); }
 
-function makeHost(tk){ const alive = () => tk === curToken; return {
-  async state(layers, fade){ if (alive()) await showState(layers, fade); },
+function makeHost(tk){ const alive = () => tk === curToken; const seek = play.seekState; return {
+  async state(layers, fade){ if (!alive()) return; if (seek.on){ seek.layers = layers; return; } await showState(layers, fade); },
   async message(m){
     if (!alive()) return;
+    const lineNo = play.line++;
+    if (seek.on){
+      if (lineNo < seek.target) return;
+      // reached the saved line: restore the picture and sound of that moment
+      seek.on = false;
+      if (seek.layers) await showState(seek.layers, false);
+      setBgm(seek.bgm);
+      for (const ch in seek.loops) if (seek.loops[ch]) playSe(+ch, seek.loops[ch]);
+    }
+    store.set('prog:' + play.route.id, { common: play.common, step: play.step, line: lineNo, at: Date.now() });
+    store.set('lastRoute', play.route.id);
     $('box').classList.remove('off');
     $('name').textContent = m.speaker || '';
     const full = m.text.replace(/[-]/g, '太壱');
@@ -1018,9 +1041,9 @@ function makeHost(tk){ const alive = () => tk === curToken; return {
     }
     if (m.voice && cfg.stopVoice && voEl.currentTime > 0 && !voEl.ended) voEl.pause();
   },
-  bgm(n){ if (alive()) setBgm(n); },
-  se(ch, n){ if (alive()) playSe(ch, n); },
-  async wait(ms){ if (alive() && !play.fast) await new Promise(r=>setTimeout(r, ms)); },
+  bgm(n){ if (!alive()) return; if (seek.on){ seek.bgm = n; return; } setBgm(n); },
+  se(ch, n){ if (!alive()) return; if (seek.on){ if (ch === 255) seek.loops = {}; else if (ch <= 3) seek.loops[ch] = n; return; } playSe(ch, n); },
+  async wait(ms){ if (alive() && !play.fast && !seek.on) await new Promise(r=>setTimeout(r, ms)); },
   window(on){ if (alive() && !on) $('box').classList.add('off'); },
   call(n){ if (alive()) setTag(n); },
 }; }
@@ -1032,14 +1055,15 @@ function renderSceneList(){
   play.steps.forEach((st, i) => {
     const li = document.createElement('li'); li.textContent = (i+1) + '. ' + label(st.s);
     li.className = i === play.step ? 'cur' : i < play.step ? 'done' : '';
-    li.onclick = () => { $('scenes').classList.add('hidden'); startRoute(play.route, play.common, i); };
+    li.onclick = () => { $('scenes').classList.add('hidden'); startRoute(play.route, play.common, i, 0); };
     ol.appendChild(li);
   });
   const cur = ol.children[play.step]; if (cur) cur.scrollIntoView({ block:'center' });
 }
 
-async function startRoute(route, includeCommon, startAt){
+async function startRoute(route, includeCommon, startAt, startLine){
   stopRun();
+  play.seekState = { on: (startLine|0) > 0, target: startLine|0, layers: null, bgm: null, loops: {} };
   const token = ++curToken; play.token = token;
   $('setup').classList.add('hidden'); $('player').classList.remove('hidden'); $('endCard').classList.add('hidden');
   ctx.fillStyle='#000'; ctx.fillRect(0,0,1024,600); shown = null; $('box').classList.add('off');
@@ -1048,9 +1072,11 @@ async function startRoute(route, includeCommon, startAt){
   const runner = new E.Runner(game, makeHost(token)); play.runner = runner;
   try{
     await runner.runSteps(play.steps, (i, st) => {
+      play.line = 0;
       play.step = i; setTag(st.s);
       $('prog').textContent = route.name + '　' + (i+1) + ' / ' + play.steps.length;
-      store.set('last', { id: route.id, common: includeCommon, step: i });
+      if (!play.seekState.on) store.set('prog:' + route.id, { common: includeCommon, step: i, line: 0, at: Date.now() });
+      store.set('lastRoute', route.id);
       if (!$('scenes').classList.contains('hidden')) renderSceneList();
     }, startAt);
   }catch(e){ console.error(e); alert('再生中にエラーが発生しました: ' + e.message); }
@@ -1058,7 +1084,7 @@ async function startRoute(route, includeCommon, startAt){
   stopAudio(); $('box').classList.add('off');
   $('endText').textContent = route.name + '　おわり';
   $('endCard').classList.remove('hidden');
-  store.set('last', null);
+  store.set('prog:' + route.id, null);
 }
 function stopRun(){
   if (play.runner){ play.runner.stop = true; }
