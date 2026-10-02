@@ -1,6 +1,6 @@
 {
- "name": "LHビューア",
- "short_name": "LHビューア",
+ "name": "MLビューア",
+ "short_name": "MLビューア",
  "start_url": "./",
  "scope": "./",
  "display": "standalone",
