@@ -105,7 +105,7 @@ html,body{-webkit-text-size-adjust:100%;touch-action:manipulation}
 
   <div class="card">
     <h2>1. データ</h2>
-    <div id="dataInfo">PCで作った分割データ（lh.pack.001of… から始まるファイル）を全部選んで、最初に1回だけ読み込みます。</div>
+    <div id="dataInfo">PCで作った分割データ（lh.pack.001of… のファイル）を読み込みます。一度に全部でも、10個ずつなど何回かに分けてもOKです。</div>
     <div class="btnrow">
       <button id="importBtn" class="primary">データを読み込む…</button>
       <button id="deleteBtn" class="hidden">データを削除</button>
@@ -737,7 +737,12 @@ function setProg(f){ const p=$('impProg'); if (f == null){ p.classList.add('hidd
 async function openStored(){
   try{
     const meta = await IDB.get('meta', 'pack');
-    if (!meta){ setStatus('まだデータがありません。「データを読み込む」から読み込んでください。'); return; }
+    if (!meta){
+      const prog = await IDB.get('meta', 'progress');
+      if (prog && prog.have.length){ setStatus('保存済み ' + prog.have.length + ' / ' + prog.count + '。「データを読み込む」で残りのファイルを選んでください。'); $('dataInfo').textContent = '途中まで保存済み。何回かに分けて選んでも大丈夫です（保存済みのものは飛ばします）。'; $('deleteBtn').classList.remove('hidden'); }
+      else setStatus('まだデータがありません。「データを読み込む」から読み込んでください。何回かに分けて選んでも大丈夫です。');
+      return;
+    }
     const parts = [];
     for (let i = 0; i < meta.count; i++){ const b = await IDB.get('parts', i); if (!b) throw new Error('保存データが欠けています。読み込み直してください。'); parts.push(b); }
     game = await E.loadPack(partsSource(parts), n => setStatus('準備中… ' + n));
@@ -751,31 +756,46 @@ async function openStored(){
   }catch(e){ console.error(e); setStatus('エラー: ' + e.message, 'err'); }
 }
 $('importBtn').onclick = () => $('partsInput').click();
+$('importBtn').addEventListener('click', () => setStatus('ファイルを選んでください。選んだあと、iPhoneがファイルを受け取るまで数分かかることがあります（画面はそのままで待ってください）。'));
 $('partsInput').onchange = async e => {
   const files = [...e.target.files].filter(f => /lh\.pack\.\d+of\d+$/.test(f.name)).sort((a,b)=>a.name.localeCompare(b.name));
   e.target.value = '';
   if (!files.length){ setStatus('lh.pack.001of… という名前のファイルを選んでください。', 'err'); return; }
   const count = +/of(\d+)$/.exec(files[0].name)[1];
-  const have = new Set(files.map(f => +/\.(\d+)of/.exec(f.name)[1]));
-  const missing = []; for (let i = 1; i <= count; i++) if (!have.has(i)) missing.push(i);
-  if (missing.length){ setStatus('足りないファイルがあります：' + missing.slice(0,10).map(i=>String(i).padStart(3,'0')).join(', ') + (missing.length>10?' ほか':'') + '（全部で' + count + '個必要）', 'err'); return; }
+  if (importing) return; importing = true; $('importBtn').disabled = true;
   try{
     if (navigator.storage && navigator.storage.persist) await navigator.storage.persist().catch(()=>{});
     game = null; refreshStart();
-    await IDB.clear();
-    let total = 0;
-    for (let i = 0; i < count; i++){
-      setStatus('保存中… ' + (i+1) + ' / ' + count); setProg(i / count);
-      // copy into memory first so the stored blob does not depend on the picked file
-      const buf = await files[i].arrayBuffer();
-      await IDB.put('parts', i, new Blob([buf]));
-      total += files[i].size;
+    let prog = await IDB.get('meta', 'progress');
+    if (!prog || prog.count !== count){ await IDB.clear(); prog = { count, have: [], sizes: {} }; }
+    const have = new Set(prog.have);
+    const todo = files.filter(f => !have.has(+/\.(\d+)of/.exec(f.name)[1]));
+    let n = 0, failed = [];
+    for (const f of todo){
+      const no = +/\.(\d+)of/.exec(f.name)[1];
+      n++; setStatus('保存中… ' + (have.size + 1) + ' / ' + count + '（今回 ' + n + ' / ' + todo.length + '）'); setProg(have.size / count);
+      try{
+        const buf = await f.arrayBuffer();           // copy so the stored data does not depend on the picked file
+        await IDB.put('parts', no - 1, new Blob([buf]));
+        have.add(no); prog.sizes[no] = f.size; prog.have = [...have];
+        await IDB.put('meta', 'progress', prog);     // saved after every file: an interruption keeps what is done
+      }catch(err){ console.error(err); failed.push(no); if (err && err.name === 'QuotaExceededError') throw err; }
     }
-    await IDB.put('meta', 'pack', { count, total, at: Date.now() });
     setProg(null);
+    const missing = []; for (let i = 1; i <= count; i++) if (!have.has(i)) missing.push(i);
+    if (missing.length){
+      const list = missing.slice(0, 12).map(i => String(i).padStart(3,'0')).join(', ') + (missing.length > 12 ? ' ほか' : '');
+      setStatus('保存済み ' + have.size + ' / ' + count + '。残りのファイルを選んでください：' + list + (failed.length ? '（失敗したものも含みます）' : ''), failed.length ? 'err' : '');
+      $('dataInfo').textContent = '途中まで保存済み（' + have.size + ' / ' + count + '）。何回かに分けて選んでも大丈夫です。';
+      return;
+    }
+    let total = 0; for (const k in prog.sizes) total += prog.sizes[k];
+    await IDB.put('meta', 'pack', { count, total, at: Date.now() });
     await openStored();
   }catch(err){ console.error(err); setProg(null); setStatus('エラー: ' + ((err && (err.message || err.name)) || '保存に失敗しました') + '（空き容量が足りない可能性があります）', 'err'); }
+  finally{ importing = false; $('importBtn').disabled = false; }
 };
+let importing = false;
 $('deleteBtn').onclick = async () => {
   if (!confirm('この端末に保存したデータを削除しますか？')) return;
   await IDB.clear(); game = null; $('deleteBtn').classList.add('hidden'); refreshStart(); setStatus('削除しました。');
