@@ -1,0 +1,1012 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="LHビューア">
+<meta name="theme-color" content="#141218">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<title>LHビューア</title>
+<style>
+:root{
+  --bg:#141218; --panel:#1e1b24; --panel2:#27232f; --line:#3a3444; --text:#ece8f1; --muted:#a79fb3;
+  --accent:#e2557a; --accent2:#f2a3b8; --ok:#7cc8a0;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:"Yu Gothic UI","Hiragino Sans","Noto Sans JP",system-ui,sans-serif}
+button{font:inherit;color:inherit;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:8px 14px;cursor:pointer}
+button:hover{border-color:var(--accent)}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+button:disabled{opacity:.45;cursor:default}
+.hidden{display:none!important}
+
+/* ---------- setup screen */
+#setup{max-width:880px;margin:0 auto;padding:32px 16px 48px}
+h1{font-size:26px;margin:0 0 4px;letter-spacing:.04em}
+h1 small{font-size:14px;color:var(--muted);font-weight:400;margin-left:8px}
+.lead{color:var(--muted);margin:0 0 24px;line-height:1.7}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px 20px;margin-bottom:16px}
+.card h2{font-size:15px;margin:0 0 12px;color:var(--accent2);font-weight:600}
+#status{color:var(--muted);font-size:14px;margin-top:10px;min-height:1.4em}
+#status.ok{color:var(--ok)}
+#status.err{color:#ff8a8a}
+.group{margin-bottom:14px}
+.group h3{font-size:13px;color:var(--muted);margin:0 0 8px;font-weight:500;letter-spacing:.08em}
+.routes{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:8px}
+.route{text-align:left;padding:12px 14px;border-radius:10px;background:var(--panel2)}
+.route.sel{border-color:var(--accent);background:#3a2230}
+.route .sub{display:block;font-size:12px;color:var(--muted);margin-top:4px}
+.opts{display:flex;flex-wrap:wrap;gap:16px;align-items:center;margin-top:6px}
+label.chk{display:flex;gap:8px;align-items:center;cursor:pointer}
+#startRow{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+#resumeBtn{font-size:14px}
+
+/* ---------- player */
+#player{position:fixed;inset:0;display:flex;flex-direction:column;background:#000}
+#stage{position:relative;flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden}
+#screen{position:relative;aspect-ratio:1024/600;width:min(100vw,calc((100vh - 52px) * 1024 / 600));max-height:calc(100vh - 52px)}
+canvas{width:100%;height:100%;display:block;background:#000}
+#box{position:absolute;left:3%;right:3%;bottom:3%;min-height:24%;background:linear-gradient(180deg,rgba(20,14,26,.78),rgba(20,14,26,.9));
+  border:1px solid rgba(255,255,255,.14);border-radius:12px;padding:2.2% 3% 2.4%;font-size:clamp(13px,2.05vw,21px);line-height:1.65;
+  text-shadow:0 1px 2px #000;white-space:pre-wrap;cursor:pointer;transition:opacity .2s}
+#box.off{opacity:0;pointer-events:none}
+#name{position:absolute;top:-1.4em;left:2.4%;background:var(--accent);color:#fff;font-size:.82em;padding:.1em .9em;border-radius:6px;font-weight:600}
+#name:empty{display:none}
+#sceneTag{position:absolute;top:10px;left:12px;font-size:12px;color:#fff;background:rgba(0,0,0,.45);padding:4px 10px;border-radius:6px;pointer-events:none;max-width:70%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#endCard{position:absolute;inset:0;display:flex;flex-direction:column;gap:16px;align-items:center;justify-content:center;background:rgba(0,0,0,.72);font-size:22px}
+#bar{height:52px;display:flex;align-items:center;gap:6px;padding:0 10px;background:#121016;border-top:1px solid #2a2530;overflow-x:auto}
+#bar button{padding:6px 10px;font-size:14px;white-space:nowrap}
+#bar .on{background:var(--accent);border-color:var(--accent);color:#fff}
+#bar .sep{flex:1}
+.volbtn{display:none}
+@media (max-width:700px){.volbtn{display:inline-block}}
+#bar label{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:4px;white-space:nowrap}
+#bar input[type=range]{width:80px}
+#prog{font-size:12px;color:var(--muted);white-space:nowrap}
+#scenes{position:absolute;top:0;right:0;bottom:0;width:min(380px,92vw);background:rgba(18,16,22,.97);border-left:1px solid var(--line);overflow:auto;padding:12px}
+#scenes h3{margin:4px 4px 10px;font-size:14px;color:var(--accent2)}
+#scenes ol{list-style:none;margin:0;padding:0}
+#scenes li{padding:7px 10px;border-radius:7px;font-size:13px;cursor:pointer;color:var(--muted)}
+#scenes li:hover{background:var(--panel2);color:var(--text)}
+#scenes li.cur{background:#3a2230;color:#fff}
+#scenes li.done{opacity:.6}
+html,body{-webkit-text-size-adjust:100%;touch-action:manipulation}
+#setup{padding-top:max(24px,env(safe-area-inset-top))}
+#player{padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+.progress{height:8px;background:var(--panel2);border-radius:4px;overflow:hidden;margin-top:10px}
+.progress>div{height:100%;width:0;background:var(--accent);transition:width .2s}
+#dataInfo{font-size:14px;color:var(--muted);margin-bottom:10px;line-height:1.6}
+.btnrow{display:flex;gap:10px;flex-wrap:wrap}
+@media (max-width: 700px){
+  #bar{height:46px;gap:4px;padding:0 6px}
+  #bar button{padding:6px 8px;font-size:13px}
+  #bar label{display:none}
+  #bar.showvol label{display:flex}
+  #screen{width:min(100vw,calc((100vh - 46px) * 1024 / 600))}
+}
+@media (orientation: portrait){
+  #stage{align-items:flex-start;padding-top:8px}
+  #screen{width:100vw;max-height:none}
+  #box{top:calc(100% + 10px);bottom:auto;left:10px;right:10px;min-height:9em;font-size:16px;padding:16px 16px 18px}
+  #name{top:-1.3em}
+  #scenes{top:0}
+}
+</style>
+</head>
+<body>
+
+<div id="setup">
+  <h1>LHビューア <small>選択肢なしでルートを流し見</small></h1>
+  <p class="lead">データは一度読み込めば、この端末の中に保存されてオフラインで再生できます。どこにも送信しません。</p>
+
+  <div class="card">
+    <h2>1. データ</h2>
+    <div id="dataInfo">PCで作った分割データ（lh.pack.001of… から始まるファイル）を全部選んで、最初に1回だけ読み込みます。</div>
+    <div class="btnrow">
+      <button id="importBtn" class="primary">データを読み込む…</button>
+      <button id="deleteBtn" class="hidden">データを削除</button>
+    </div>
+    <input id="partsInput" type="file" multiple class="hidden">
+    <div class="progress hidden" id="impProg"><div></div></div>
+    <div id="status">データを確認しています…</div>
+  </div>
+
+  <div class="card" id="routeCard">
+    <h2>2. ルートを選ぶ</h2>
+    <div id="routeList"></div>
+    <div class="opts">
+      <label class="chk"><input type="checkbox" id="skipCommon"> 共通部分（オープニング・共通ルート）を飛ばす</label>
+    </div>
+  </div>
+
+  <div id="startRow">
+    <button id="startBtn" class="primary" disabled>再生開始</button>
+    <button id="resumeBtn" class="hidden"></button>
+  </div>
+</div>
+
+<div id="player" class="hidden">
+  <div id="stage">
+    <div id="screen">
+      <canvas id="cv" width="1024" height="600"></canvas>
+      <div id="sceneTag"></div>
+      <div id="box" class="off"><div id="name"></div><div id="text"></div></div>
+      <div id="endCard" class="hidden"><div id="endText">おわり</div><button id="endBack" class="primary">ルート選択に戻る</button></div>
+    </div>
+    <div id="scenes" class="hidden"><h3>シーン一覧（クリックで移動）</h3><ol id="sceneList"></ol></div>
+  </div>
+  <div id="bar">
+    <button id="bMenu" title="ルート選択に戻る (Esc)">☰ 戻る</button>
+    <button id="bAuto" class="on" title="オート再生 (A)">▶ オート</button>
+    <button id="bNext" title="次の文 (Space / クリック)">次へ</button>
+    <button id="bSkipScene" title="このシーンを飛ばす (S)">シーン送り ⏭</button>
+    <button id="bList" title="シーン一覧 (L)">一覧</button>
+    <button id="bFast" title="早送り (Ctrlを押している間も)">⏩ 早送り</button>
+    <button id="bVol" class="volbtn">音量</button>
+    <span id="prog"></span>
+    <span class="sep"></span>
+    <label>待ち <input id="rSpeed" type="range" min="0" max="3000" step="100" value="700"></label>
+    <label>BGM <input id="rBgm" type="range" min="0" max="100" value="45"></label>
+    <label>効果音 <input id="rSe" type="range" min="0" max="100" value="70"></label>
+    <label>ボイス <input id="rVo" type="range" min="0" max="100" value="100"></label>
+  </div>
+</div>
+
+<script>// LoveHolic route viewer engine (data parsing + script interpreter)
+// Works in browser and Node. Reads game files read-only through "sources":
+//   source = { name, size, read(offset, length) -> Promise<Uint8Array> }
+(function (global) {
+'use strict';
+
+const u16 = (b, o) => b[o] | (b[o + 1] << 8);
+const u32 = (b, o) => (b[o] | (b[o + 1] << 8) | (b[o + 2] << 16) | (b[o + 3] << 24)) >>> 0;
+const i32 = (b, o) => (b[o] | (b[o + 1] << 8) | (b[o + 2] << 16) | (b[o + 3] << 24));
+const i16 = (b, o) => { const v = u16(b, o); return v & 0x8000 ? v - 0x10000 : v; };
+const utf16 = new TextDecoder('utf-16le');
+const sjis = new TextDecoder('shift_jis');
+const ascii = (b, o, n) => String.fromCharCode.apply(null, b.subarray(o, o + n));
+
+// ---------------------------------------------------------------- LINK6 archive
+async function openArc(src, cache) {
+  const ckey = 'idx:' + src.name + ':' + src.size + ':' + (src.mtime || 0);
+  const mk = (byName, byStem) => ({ src, byName, byStem, async raw(ent) { return src.read(ent.off, ent.size); } });
+  if (cache) {
+    const c = cache.get(ckey);
+    if (c && c.length) {
+      const byStem = new Map(), byName = new Map();
+      for (let i = 0; i < c.length; i += 4) {
+        const name = c[i]; const ent = { name, off: c[i + 1], size: c[i + 2], flags: c[i + 3] };
+        byName.set(name, ent); const dot = name.lastIndexOf('.'); byStem.set(dot > 0 ? name.slice(0, dot) : name, ent);
+      }
+      return mk(byName, byStem);
+    }
+  }
+  const head = await src.read(0, 8);
+  if (ascii(head, 0, 5) !== 'LINK6') throw new Error(src.name + ': not LINK6');
+  let pos = 8 + head[7];
+  const byStem = new Map();
+  const byName = new Map();
+  // read headers in chunks to reduce I/O calls
+  let bufStart = -1, buf = null;
+  const CH = 1 << 16; let small = false; let firstSize = 0;
+  async function get(off, len) {
+    if (buf && off >= bufStart && off + len <= bufStart + buf.length) return buf.subarray(off - bufStart, off - bufStart + len);
+    const n = Math.max(len, small ? 512 : CH);
+    buf = await src.read(off, Math.min(n, src.size - off)); bufStart = off;
+    return buf.subarray(0, len);
+  }
+  while (pos + 15 <= src.size) {
+    const h = await get(pos, 15);
+    const size = u32(h, 0);
+    if (!size) break;
+    const flags = u16(h, 4);
+    const nl = u16(h, 13);
+    const nb = await get(pos + 15, nl);
+    const name = utf16.decode(nb);
+    const off = pos + 15 + nl;
+    const ent = { name, off, size: pos + size - off, flags };
+    if (!firstSize) { firstSize = size; small = size > 8192; }
+    byName.set(name, ent);
+    const dot = name.lastIndexOf('.');
+    byStem.set(dot > 0 ? name.slice(0, dot) : name, ent);
+    pos += size;
+  }
+  if (cache) { const flat = []; for (const e of byName.values()) flat.push(e.name, e.off, e.size, e.flags); cache.set(ckey, flat); }
+  return mk(byName, byStem);
+}
+
+// ---------------------------------------------------------------- params.dat
+function findUtf16(buf, s, from) {
+  const pat = new Uint8Array(s.length * 2);
+  for (let i = 0; i < s.length; i++) { pat[i * 2] = s.charCodeAt(i) & 255; pat[i * 2 + 1] = s.charCodeAt(i) >> 8; }
+  outer: for (let i = from || 0; i <= buf.length - pat.length; i++) {
+    for (let j = 0; j < pat.length; j++) if (buf[i + j] !== pat[j]) continue outer;
+    return i;
+  }
+  return -1;
+}
+
+function parseParams(b) {
+  // resource table: [u32 count][u16 ?] then entries [u8 flag][u16 len][utf16], flag1 -> [u32 n] n strings then a string
+  const at = findUtf16(b, '.scr', 0);
+  if (at < 0) throw new Error('params.dat: resource table not found');
+  // walk back to the start of that string: find p such that u16(p) == at+8-(p+2) and b[p-1]==0
+  let p = -1;
+  for (let q = at - 2; q > at - 400; q -= 2) {
+    if (u16(b, q) === at + 8 - (q + 2)) { p = q - 1; break; }
+  }
+  if (p < 0) throw new Error('params.dat: table start not found');
+  const count = u32(b, p - 6); // count includes reserved slot 0
+  const res = [null];
+  const rs = () => { const n = u16(b, p); const s = utf16.decode(b.subarray(p + 2, p + 2 + n)); p += 2 + n; return s; };
+  for (let i = 1; i < count; i++) {
+    const flag = b[p++];
+    if (flag === 0) res.push(rs());
+    else if (flag === 1) { const n = u32(b, p); p += 4; for (let k = 0; k < n; k++) rs(); res.push(rs()); }
+    else throw new Error('params.dat: bad flag ' + flag + ' at ' + p);
+  }
+  // image table
+  if (u32(b, p) > 100000) p++; // one padding byte after the name table
+  const ic = u32(b, p); p += 4;
+  const imgs = [];
+  for (let i = 0; i < ic; i++) {
+    const c = b[p++]; const a = [];
+    for (let k = 0; k < c; k++) { a.push(u32(b, p)); p += 4; }
+    imgs.push(a);
+  }
+  // decryption key: int32 length (w*h*4 of the screen) followed by key bytes
+  let key = null;
+  for (let q = 0x400; q < b.length - 4; q++) {
+    const n = u32(b, q);
+    if (n === 1024 * 600 * 4 && q + 4 + n <= b.length) { key = b.slice(q + 4, q + 4 + n); break; }
+  }
+  return { res, imgs, key };
+}
+
+// ---------------------------------------------------------------- message.dat
+function parseMessages(b) {
+  const not = (o, n) => { const t = new Uint8Array(n); for (let i = 0; i < n; i++) t[i] = 255 - b[o + i]; return t; };
+  let p = 0x15;
+  const nn = u32(b, p); p += 4;
+  const names = [];
+  for (let i = 0; i < nn; i++) { const n = u16(b, p); names.push(sjis.decode(not(p + 2, n))); p += 2 + n; }
+  const nc = u32(b, p); p += 4;
+  const choices = [];
+  for (let i = 0; i < nc; i++) { const n = u16(b, p); choices.push(sjis.decode(not(p + 2, n))); p += 2 + n; }
+  const nm = u32(b, p); p += 4;
+  const rtext = new Array(nm), rvoice = new Array(nm);
+  for (let i = 0; i < nm && p + 4 <= b.length; i++) {
+    const L = u32(b, p); const r = not(p + 4, L); p += 4 + L;
+    const tl = u32(r, 0);
+    rtext[i] = sjis.decode(r.subarray(4, 4 + tl)).replace(/\n$/, '');
+    rvoice[i] = r[4 + tl] ? utf16.decode(r.subarray(5 + tl)).replace(/\0+$/, '') : '';
+  }
+  // message id -> [speaker name index, record list]
+  const ne = u32(b, p); p += 4;
+  const text = new Array(ne), voice = new Array(ne), speaker = new Int32Array(ne);
+  for (let i = 0; i < ne; i++) {
+    speaker[i] = i32(b, p); const c = b[p + 4]; const rec = u32(b, p + 5); p += 5 + 4 * c;
+    text[i] = rtext[rec]; voice[i] = rvoice[rec];
+  }
+  return { names, choices, text, voice, speaker };
+}
+
+// ---------------------------------------------------------------- scripts
+function parseScript(name, b) {
+  if (ascii(b, 0, 12) !== '[SCR-Ver5.1]') throw new Error(name + ': bad header');
+  const clen = u32(b, 12);
+  const ins = [];           // {pos, op, p}
+  const at = new Map();     // file offset -> instruction index
+  let pos = 16;
+  while (pos < 16 + clen) {
+    const op = u16(b, pos), ln = u16(b, pos + 2);
+    if (ln < 4) throw new Error(name + ': bad op at ' + pos);
+    at.set(pos, ins.length);
+    ins.push({ pos, op, p: b.subarray(pos + 4, pos + ln) });
+    pos += ln;
+  }
+  // [LAYER] states
+  let states = [];
+  const li = (() => { for (let i = pos; i < b.length - 7; i++) if (b[i] === 0x5b && ascii(b, i, 7) === '[LAYER]') return i; return -1; })();
+  if (li >= 0) {
+    let q = li + 7; const n = u32(b, q); q += 4;
+    const offs = []; for (let i = 0; i < n; i++) offs.push(u32(b, q + i * 4));
+    const base = q + 4 * n;
+    for (let i = 0; i < n; i++) {
+      const s = base + offs[i], e = i + 1 < n ? base + offs[i + 1] : b.length;
+      const blob = b.subarray(s, e); const layers = [];
+      let k = 1;
+      while (k + 2 <= blob.length) {
+        const sz = u16(blob, k); if (sz < 2) break;
+        const x = blob.subarray(k + 2, k + sz); k += sz;
+        layers.push({ img: u32(x, 0), z: x[4], dx: i16(x, 5), dy: i16(x, 7) });
+      }
+      states.push(layers);
+    }
+  }
+  return { name, ins, at, states };
+}
+
+// static analysis of choice menus: returns plan info per script
+// For each "cmp v0 == K / jf T" find first "v112 = X" in branch (affection gain) and whether it sets v111 = 0
+function analyzeChoices(sc) {
+  const ins = sc.ins; const gains = {}; const ends = {};
+  const isCmpV0 = (x) => x.op === 0x0d && x.p[0] === 0x12 && x.p[1] === 0 && u32(x.p, 4) === 0;
+  const imm = (x) => i32(x.p, 8);
+  for (let i = 0; i < ins.length; i++) {
+    const x = ins[i];
+    if (!isCmpV0(x)) continue;
+    const K = imm(x); const j = ins[i + 1];
+    if (!j || j.op !== 0x0f) continue;
+    const T = sc.at.get(u32(j.p, 3));
+    const scan = (from, to) => {
+      let g = null, e = false;
+      for (let k = from; k < to && k < ins.length; k++) {
+        const y = ins[k];
+        if (isCmpV0(y) && k > from) break;
+        if (y.op === 1 && y.p[0] === 0x18 && u16(y.p, 2) === 112 && g === null) g = i32(y.p, 8);
+        if (y.op === 1 && y.p[0] === 0x18 && u16(y.p, 2) === 111 && i32(y.p, 8) === 0) e = true;
+      }
+      return [g, e];
+    };
+    if (!(K in gains)) { const [g, e] = scan(i + 2, T == null ? ins.length : T); gains[K] = g; ends[K] = e; }
+    // two-option menus: the else branch is option 1
+    if (K === 0 && T != null && !(1 in gains)) {
+      const nxt = ins[T];
+      if (!isCmpV0(nxt)) { const [g, e] = scan(T, ins.length); gains[1] = g; ends[1] = e; }
+    }
+  }
+  return { gains, ends };
+}
+
+// ---------------------------------------------------------------- data bundle
+async function loadGame(files, progress, cache) {
+  const need = n => { const f = files.get(n.toLowerCase()); if (!f) throw new Error(n + ' が見つかりません'); return f; };
+  const full = async n => { const f = need(n); return f.read(0, f.size); };
+  progress && progress('params.dat');
+  const params = parseParams(await full('params.dat'));
+  progress && progress('message.dat');
+  const msg = parseMessages(await full('message.dat'));
+  progress && progress('scr.arc');
+  const scrArc = await openArc(need('scr.arc'));
+  const arcs = { scr: scrArc };
+  const arcNames = ['bgd', 'bgm', 'sed', 'sp00', 'sp01', 'cg00', 'cg01', 'cg02', 'cg03', 'cg04', 'cg05', 'voice00', 'voice01', 'voice02'];
+  let done = 0;
+  progress && progress('アーカイブ (0/' + arcNames.length + ')');
+  await Promise.all(arcNames.map(async a => {
+    arcs[a] = await openArc(need(a + '.arc'), cache);
+    done++; progress && progress('アーカイブ (' + done + '/' + arcNames.length + ')');
+  }));
+  return makeGame(params, msg, arcs);
+}
+
+function makeGame(params, msg, arcs) {
+  const scrArc = arcs.scr;
+  const scripts = new Map();
+  async function script(name) {
+    if (scripts.has(name)) return scripts.get(name);
+    const ent = scrArc.byName.get(name);
+    if (!ent) throw new Error('script not found: ' + name);
+    const sc = parseScript(name, await scrArc.raw(ent));
+    sc.choice = analyzeChoices(sc);
+    scripts.set(name, sc); return sc;
+  }
+  function resolve(resName) { // "X.cg00" -> {arc, ent}
+    if (!resName) return null;
+    const dot = resName.lastIndexOf('.'); if (dot < 0) return null;
+    const a = arcs[resName.slice(dot + 1)]; if (!a) return null;
+    const ent = a.byStem.get(resName.slice(0, dot)); if (!ent) return null;
+    return { arc: a, ent };
+  }
+  return { params, msg, arcs, script, resolve };
+}
+
+// ---------------------------------------------------------------- converted data pack (for phones)
+// layout: "LHPK1\0\0\0" u32 jsonLen, json {index:{"arc/name":[off,size,kind,...]}}, blobs
+async function loadPack(src, progress) {
+  const h = await src.read(0, 12);
+  if (ascii(h, 0, 5) !== 'LHPK1') throw new Error('データファイルの形式が違います');
+  const n = u32(h, 8);
+  progress && progress('目次');
+  const meta = JSON.parse(new TextDecoder().decode(await src.read(12, n)));
+  const base = 12 + n;
+  const arcs = {}; const core = {};
+  for (const key in meta.index) {
+    const [off, size, kind, a1, a2] = meta.index[key];
+    const sl = key.indexOf('/');
+    if (sl < 0) { core[key] = { off: base + off, size }; continue; }
+    const an = key.slice(0, sl), name = key.slice(sl + 1);
+    const arc = arcs[an] || (arcs[an] = { src, byName: new Map(), byStem: new Map(), async raw(e) { return src.read(e.off, e.size); } });
+    const ent = kind === 'w' ? { name, off: base + off, size, flags: 0, webp: true, x: a1, y: a2 } : { name, off: base + off, size, flags: a1 || 0 };
+    arc.byName.set(name, ent);
+    const dot = name.lastIndexOf('.');
+    arc.byStem.set(kind === 'w' || dot < 0 ? name : name.slice(0, dot), ent);
+  }
+  progress && progress('設定');
+  const params = parseParams(await src.read(core['params.dat'].off, core['params.dat'].size));
+  const msg = parseMessages(await src.read(core['message.dat'].off, core['message.dat'].size));
+  return makeGame(params, msg, arcs);
+}
+
+// ---------------------------------------------------------------- interpreter
+const SPEAKERS = { kon: '紅音', sei: 'セイラ', szk: '鈴鹿', mai: '舞凍', kky: '桔梗', avu: 'アヴリル', gra: 'グラァネ', grm: 'グリモ',
+  yas: '夜叉', mit: '光雅', yka: '由夏子', soi: '創一', var: 'ヴァール', mso: '政夫', yur: '湯莉', syu: '隼吾', sin: '真助', tub: '椿', bab: '番場', ano: '阿野' };
+
+const SILENT = { state: async () => {}, message: async () => {}, bgm() {}, se() {}, wait: async () => {}, window() {}, call() {} };
+
+class Runner {
+  // host: { state(layers, sc, trans), message(m), bgm(resName|null), se(ch, resName|null), wait(ms), stopped() }
+  constructor(game, host) {
+    this.g = game; this.h = host; this.v = new Int32Array(512);
+    this.route = null; this.stop = false;
+  }
+  setVars(o) { for (const k in o) this.v[+k] = o[k]; }
+  async runSteps(steps, onStep, startAt) {
+    startAt = startAt || 0;
+    for (let i = 0; i < steps.length && !this.stop; i++) {
+      const st = steps[i];
+      if (st.set) this.setVars(st.set);
+      this.route = st;
+      if (i < startAt) { // fast-forward silently to rebuild variables
+        const h = this.h; this.h = SILENT; await this.call(st.s, 0); this.h = h; continue;
+      }
+      onStep && onStep(i, st);
+      this.abortStep = false;
+      await this.call(st.s, 0);
+      this.abortStep = false;
+    }
+  }
+  async call(name, depth) {
+    const sc = await this.g.script(name);
+    const v = this.v; const R = this.g.params.res;
+    let pc = 0, flag = false;
+    const plan = this.planFor(sc);
+    while (pc < sc.ins.length && !this.stop && !this.abortStep) {
+      const x = sc.ins[pc++]; const p = x.p;
+      switch (x.op) {
+        case 0x01: {
+          const t = p[0], k = p[1], a = u16(p, 2);
+          let val = t === 0x18 || t === 0x12 ? i32(p, 8) : t === 0x28 || t === 0x22 ? v[u32(p, 8)] : null;
+          if (val === null) break;
+          if (t === 0x18 || t === 0x28) v[a] = val;
+          else {
+            switch (k) { case 0: v[a] = val; break; case 1: v[a] += val; break; case 2: v[a] -= val; break; case 3: v[a] *= val; break;
+              case 4: v[a] = val ? (v[a] / val) | 0 : 0; break; case 5: v[a] = val ? v[a] % val : 0; break; case 6: v[a] &= val; break; case 7: v[a] |= val; break; }
+          }
+          break;
+        }
+        case 0x0d: {
+          const t = p[0], k = p[1]; const a = v[u32(p, 4)];
+          const b = t === 0x22 ? v[u32(p, 8)] : i32(p, 8);
+          flag = k === 0 ? a === b : k === 1 ? a !== b : k === 2 ? a < b : k === 3 ? a <= b : k === 4 ? a > b : k === 5 ? a >= b : false;
+          break;
+        }
+        case 0x0f: if (!flag) pc = this.jump(sc, u32(p, 3)); break;
+        case 0x0e: if (flag) pc = this.jump(sc, u32(p, 3)); break;
+        case 0x0b: pc = this.jump(sc, u32(p, 0)); break;
+        case 0x1a: if (depth < 8) { this.h.call && this.h.call(R[u32(p, 1)]); await this.call(R[u32(p, 1)], depth + 1); } break;
+        case 0x0c: return;            // jump to system script: end of this scene
+        case 0x04: return;
+        case 0x06: {
+          const n = u32(p, 0); const tt = p.length > 8 ? p[8] : 0;
+          if (sc.states[n]) await this.h.state(sc.states[n], tt === 0 ? 0 : 1);
+          break;
+        }
+        case 0x07: {
+          const i = u32(p, 0); const text = this.g.msg.text[i] || ''; const vo = this.g.msg.voice[i] || '';
+          const si = this.g.msg.speaker ? this.g.msg.speaker[i] : -1;
+          let speaker = si >= 0 ? (this.g.msg.names[si] || '') : '';
+          if (si === 2 || /[\uE000-\uF8FF]/.test(speaker)) speaker = '太壱';
+          if (!speaker && vo) { const m = /^[a-z]+/.exec(vo); speaker = m && SPEAKERS[m[0]] || ''; }
+          await this.h.message({ text, voice: vo ? vo : null, speaker, scene: name });
+          break;
+        }
+        case 0x0a: { const i = u32(p, 0); this.h.bgm(i === 0xffffffff ? null : R[i]); break; }
+        case 0x09: { const ch = p[0]; const i = u32(p, 1); this.h.se(ch, i === 0xffffffff ? null : R[i]); break; }
+        case 0x05: { const n = u16(p, 1); if (n && n < 0x8000) await this.h.wait(Math.min(n * 50, 2000)); break; }
+        case 0x14: {
+          const c = p[1];
+          if (c === 0x0e) v[12] = this.route && this.route.ver != null ? this.route.ver : 0; // H-scene version select
+          else if (c === 0x13) v[0] = plan.next();                                         // in-scene menu
+          break;
+        }
+        case 0x08: v[0] = plan.choice(); break;                                          // explicit choice
+        case 0x17: this.h.window && this.h.window(true); break;
+        case 0x18: this.h.window && this.h.window(false); break;
+        default: break;
+      }
+    }
+  }
+  jump(sc, target) { const i = sc.at.get(target); if (i == null) throw new Error(sc.name + ': bad jump ' + target); return i; }
+  planFor(sc) {
+    const { gains, ends } = sc.choice;
+    const keys = Object.keys(gains).map(Number);
+    // order: highest gain first; a command that ends the menu goes last
+    const order = keys.slice().sort((a, b) => ((ends[a] ? 1 : 0) - (ends[b] ? 1 : 0)) || ((gains[b] || 0) - (gains[a] || 0)) || a - b);
+    let used = 0;
+    const best = keys.length ? keys.slice().sort((a, b) => ((gains[b] || 0) - (gains[a] || 0)) || a - b)[0] : 0;
+    return {
+      next: () => (order.length ? order[Math.min(used++, order.length - 1)] : 0),
+      choice: () => best,
+    };
+  }
+}
+
+// ---------------------------------------------------------------- image decoding (to RGBA)
+function xorBody(d, off, key) {
+  const out = new Uint8Array(d); const n = out.length - off; const kl = key.length;
+  for (let i = 0; i < n; i++) out[off + i] ^= key[i % kl];
+  return out;
+}
+// returns {w,h,x,y, rgba:Uint8ClampedArray} or {bmp: Uint8Array, x,y}
+
+// BMR: Huffman + move-to-front + BWT (+ strided RLE) compressed bitmap
+function unpackBMR(d) {
+  const step = d[3], finalSize = i32(d, 4), key = i32(d, 8), size = i32(d, 12);
+  let pos = 0x14, bits = 0, nb = 0;
+  const bit = () => { if (!nb) { bits = d[pos++]; nb = 8; } nb--; return (bits >> nb) & 1; };
+  const get8 = () => { let v = 0; for (let i = 0; i < 8; i++) v = (v << 1) | bit(); return v; };
+  const t0 = new Uint16Array(256), t1 = new Uint16Array(256); let token = 256;
+  const tree = () => { if (bit()) { const v = token++; t0[v - 256] = tree(); t1[v - 256] = tree(); return v; } return get8(); };
+  const root = tree();
+  let out = new Uint8Array(size);
+  for (let i = 0; i < size; i++) { let s = root; while (s >= 256) s = bit() ? t1[s - 256] : t0[s - 256]; out[i] = s; }
+  const dict = new Uint8Array(256); for (let i = 0; i < 256; i++) dict[i] = i;
+  for (let i = 0; i < size; i++) { const v = out[i]; const c = dict[v]; out[i] = c; for (let j = v; j > 0; j--) dict[j] = dict[j - 1]; dict[0] = c; }
+  const freq = new Int32Array(256); for (let i = 0; i < size; i++) freq[out[i]]++;
+  for (let i = 1; i < 256; i++) freq[i] += freq[i - 1];
+  const dist = new Int32Array(size); for (let i = size - 1; i >= 0; i--) dist[--freq[out[i]]] = i;
+  const bw = new Uint8Array(size); let p = key; for (let i = 0; i < size; i++) { p = dist[p]; bw[i] = out[p]; }
+  out = bw;
+  if (step) {
+    const res = new Uint8Array(finalSize); let src = 0;
+    for (let i = 0; i < step; i++) {
+      let v1 = out[src++]; res[i] = v1; let dst = i + step;
+      while (dst < finalSize) {
+        let v2 = out[src++]; res[dst] = v2; dst += step;
+        if (v2 === v1) {
+          let count = out[src++];
+          if (count & 0x80) count = out[src++] + ((count & 0x7f) << 8) + 128;
+          while (count-- > 0 && dst < finalSize) { res[dst] = v2; dst += step; }
+          if (dst < finalSize) { v2 = out[src++]; res[dst] = v2; dst += step; }
+        }
+        v1 = v2;
+      }
+    }
+    out = res;
+  }
+  return out;
+}
+
+function decodeImage(d, ent, key) {
+  if (d[0] === 0x42 && d[1] === 0x4d && d[2] === 0x52) d = unpackBMR(d);
+  if (d[0] === 0x42 && d[1] === 0x4d) { // BMP
+    if (ent.flags & 4) d = xorBody(d, 0x36, key);
+    const off = u32(d, 10), w = i32(d, 18), hh = i32(d, 22), bpp = u16(d, 28);
+    const h = Math.abs(hh); const bottomUp = hh > 0; const bytes = bpp >> 3; const stride = (w * bytes + 3) & ~3;
+    const rgba = new Uint8ClampedArray(w * h * 4);
+    for (let y = 0; y < h; y++) {
+      const sy = bottomUp ? h - 1 - y : y; let s = off + sy * stride, t = y * w * 4;
+      for (let x = 0; x < w; x++, s += bytes, t += 4) { rgba[t] = d[s + 2]; rgba[t + 1] = d[s + 1]; rgba[t + 2] = d[s]; rgba[t + 3] = bytes === 4 ? d[s + 3] : 255; }
+    }
+    return { w, h, x: 0, y: 0, rgba };
+  }
+  const tag = ascii(d, 0, 4);
+  if (tag === 'AP-2' || tag === 'AP-3') {
+    if (ent.flags & 4) d = xorBody(d, 0x18, key);
+    const x0 = i32(d, 4), y0 = i32(d, 8), w = u32(d, 12), h = u32(d, 16);
+    return { w, h, x: x0, y: y0, rgba: bgraFlip(d, 0x18, w, h) };
+  }
+  if (tag === 'AN00') {
+    const bx = i32(d, 4), by = i32(d, 8);
+    const fc = i16(d, 0x14); let p = 0x18 + fc * 4; p += 2;
+    const fx = i32(d, p), fy = i32(d, p + 4), w = u32(d, p + 8), h = u32(d, p + 12);
+    return { w, h, x: bx + fx, y: by + fy, rgba: bgraFlip(d, p + 16, w, h) };
+  }
+  if (tag === 'AP-0') return null;
+  if (d[0] === 0x41 && d[1] === 0x50) { // plain 'AP': w,h,bpp then BGRA rows bottom-up
+    const w = u32(d, 2), h = u32(d, 6);
+    if (w > 0 && h > 0 && w <= 4096 && h <= 4096 && 12 + w * h * 4 <= d.length) return { w, h, x: 0, y: 0, rgba: bgraFlip(d, 12, w, h) };
+  }
+  return null;
+}
+function bgraFlip(d, off, w, h) {
+  const rgba = new Uint8ClampedArray(w * h * 4);
+  for (let y = 0; y < h; y++) {
+    let s = off + (h - 1 - y) * w * 4, t = y * w * 4;
+    for (let x = 0; x < w; x++, s += 4, t += 4) { rgba[t] = d[s + 2]; rgba[t + 1] = d[s + 1]; rgba[t + 2] = d[s]; rgba[t + 3] = d[s + 3]; }
+  }
+  return rgba;
+}
+
+global.LHEngine = { loadPack, unpackBMR, openArc, parseParams, parseMessages, parseScript, analyzeChoices, loadGame, Runner, decodeImage, u32, i32 };
+})(typeof window !== 'undefined' ? window : globalThis);
+</script>
+<script>// Route definitions: which scenes to play, in order, and which flags to assume.
+(function (global) {
+'use strict';
+const S = (code, title) => code; // helper (titles resolved from file names at runtime)
+
+const COMMON = ['A0000', 'A0010', 'A0020', 'A0030', 'A0040', 'A0050', 'A0060', 'A0070', 'B0000'];
+
+// main heroine chain. P = letter (C/D/E), pv = progress var, ver: 0/1
+// stage values are what the game's route script holds when calling each scene
+function mainChain(P, pv, ver) {
+  const st = [
+    ['0000', 0], ['0010', 10], ['0020', 20], ['0040', 40], ['0050', 40],
+    ['0100', 100], ['0110', 110], ['0120', 120], ['0140', 140], ['0150', 140],
+    ['0200', 200], ['0210', 210], ['0220', 220], ['0240', 240], ['0250', 240], ['0260', 260],
+    ver === 0 ? ['0300', 300] : ['0400', 400],
+    ['0500', 500], ['0510', 510], ['0520', 520], ['0540', 540], ['0550', 540], ['0560', 560],
+  ];
+  return st.map(([n, s]) => ({ s: P + n, set: { [pv]: s }, ver }));
+}
+const PERSONAL = { C: '個人ルート（Ｃ　紅音）.scr', D: '個人ルート（Ｄ　鈴鹿）.scr', E: '個人ルート（Ｅ　セイラ）.scr',
+  F: '個人ルート（Ｆ　舞凍）.scr', G: '個人ルート（Ｇ　アヴリル）.scr', H: '個人ルート（Ｈ　桔梗）.scr' };
+
+// stat pairs [first-version stat, second-version stat]
+const STAT = { C: [49, 50], D: [53, 54], E: [51, 52] };
+const PV = { C: 65, E: 66, D: 67, F: 68, H: 69, G: 70 };
+
+function main(P, ver, items) {
+  const steps = mainChain(P, PV[P], ver);
+  steps.push({ s: PERSONAL[P], set: Object.assign({ [PV[P]]: 1000 }, items), ver });
+  return steps;
+}
+
+const ROUTES = [
+  { id: 'akane1', desc: '吸血鬼版で統一', group: 'メインヒロイン', name: '紅音 吸血鬼END', steps: () => main('C', 0, { 63: 1 }) },
+  { id: 'akane2', desc: '雪女版で統一', group: 'メインヒロイン', name: '紅音 雪女END', steps: () => main('C', 1, { 64: 1 }) },
+  { id: 'suzuka1', desc: '悪鬼版で統一', group: 'メインヒロイン', name: '鈴鹿 悪鬼END', steps: () => main('D', 0, { 57: 1 }) },
+  { id: 'suzuka2', desc: '善鬼版で統一', group: 'メインヒロイン', name: '鈴鹿 善鬼END', steps: () => main('D', 1, { 61: 1 }) },
+  { id: 'seira1', desc: '暴竜版で統一', group: 'メインヒロイン', name: 'セイラ 暴竜END', steps: () => main('E', 0, { 59: 1 }) },
+  { id: 'seira2', desc: '聖竜版・アイテムなし', group: 'メインヒロイン', name: 'セイラ 聖竜END2', steps: () => main('E', 1, { 62: 0 }) },
+  { id: 'seira3', desc: '聖竜版・アイテムあり', group: 'メインヒロイン', name: 'セイラ 聖竜END3', steps: () => main('E', 1, { 62: 1 }) },
+  { id: 'mai', desc: '舞凍のイベントのみ', group: 'サブキャラ', name: '舞凍END', steps: () => [
+      { s: 'F0000', set: { 50: 55, 68: 0 } }, { s: 'F0010', set: { 68: 10 } }, { s: 'F0020', set: { 68: 20 } },
+      { s: 'F0030', set: { 68: 30 } }, { s: 'F0040', set: { 68: 40 } }, { s: PERSONAL.F, set: { 68: 1000, 46: 100 } }] },
+  { id: 'kikyou', desc: '桔梗のイベントのみ', group: 'サブキャラ', name: '桔梗END', steps: () => [
+      { s: 'H0000', set: { 49: 55, 69: 0 } }, { s: 'H0010', set: { 69: 10 } }, { s: 'H0020', set: { 69: 20 } },
+      { s: 'H0030', set: { 69: 30 } }, { s: 'H0040', set: { 69: 40 } }, { s: PERSONAL.H, set: { 69: 1000, 60: 1 } }] },
+  { id: 'avril', desc: 'アヴリルのイベントのみ', group: 'サブキャラ', name: 'アヴリルEND', steps: () => [
+      { s: 'G0000', set: { 70: 0, 57: 1, 58: 1, 59: 1, 60: 1, 61: 1, 62: 1, 63: 1, 64: 1 } },
+      { s: 'G0100', set: { 70: 100 } }, { s: 'G0200', set: { 70: 200 } }, { s: 'G0300', set: { 70: 300 } },
+      { s: 'G0400', set: { 70: 400 } }, { s: PERSONAL.G, set: { 70: 1000 } }] },
+  { id: 'oyako', desc: '紅音（雪女）→舞凍→母娘', group: 'その他', name: '母娘END（舞凍・紅音）', steps: () => [
+      ...mainChain('C', 65, 1),
+      { s: 'F0000', set: { 65: 1000, 68: 0 } }, { s: 'F0010', set: { 68: 10 } }, { s: 'F0020', set: { 68: 20 } },
+      { s: 'F0030', set: { 68: 30 } }, { s: 'F0040', set: { 68: 40 } },
+      { s: '舞凍・紅音　母娘ルート.scr', set: { 68: 1000, 46: 100, 71: 0 } }] },
+  { id: 'gragri', desc: 'このイベントのみ', group: 'その他', name: 'グラァネ・グリモ', steps: () => [
+      { s: 'B1000', set: { 65: 1000, 49: 0, 50: 100, 46: 100, 72: 0 } }] },
+  { id: 'harem', desc: '紅音→鈴鹿→セイラ→ハーレム', group: 'その他', name: 'ハーレムEND', steps: () => [
+      ...mainChain('C', 65, 1), ...mainChain('D', 67, 1), ...mainChain('E', 66, 1),
+      { s: 'ハーレムルート.scr', set: { 65: 1000, 66: 1000, 67: 1000, 57: 1, 60: 1, 73: 0 } }] },
+];
+
+function expand(route, includeCommon, fileNames) {
+  const full = code => fileNames.find(n => n === code || n.startsWith(code + '　')) || code;
+  const steps = [];
+  if (includeCommon) for (const c of COMMON) steps.push({ s: c, common: true });
+  steps.push(...route.steps());
+  return steps.map(st => Object.assign({}, st, { s: full(st.s) }));
+}
+
+global.LHRoutes = { ROUTES, expand };
+})(typeof window !== 'undefined' ? window : globalThis);
+</script>
+<script>
+'use strict';
+const E = window.LHEngine, RT = window.LHRoutes;
+const $ = id => document.getElementById(id);
+const store = { get(k){ try{ return JSON.parse(localStorage.getItem('lhv:'+k)); }catch(e){ return null; } },
+                set(k,v){ try{ localStorage.setItem('lhv:'+k, JSON.stringify(v)); }catch(e){} } };
+
+let game = null, selected = null;
+
+// ---------------------------------------------------------------- data storage (IndexedDB, parts kept as Blobs)
+const IDB = {
+  db: null,
+  open(){ return this.db || (this.db = new Promise((res, rej) => { const r = indexedDB.open('lhviewer', 1);
+    r.onupgradeneeded = () => { r.result.createObjectStore('parts'); r.result.createObjectStore('meta'); };
+    r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); })); },
+  async tx(store, mode, fn){ const db = await this.open(); return new Promise((res, rej) => { const t = db.transaction(store, mode); const st = t.objectStore(store); const out = fn(st);
+    t.oncomplete = () => res(out instanceof IDBRequest ? out.result : undefined); t.onerror = () => rej(t.error); t.onabort = () => rej(t.error || new Error('保存に失敗しました（空き容量を確認してください）')); }); },
+  get(store, key){ return this.tx(store, 'readonly', st => st.get(key)); },
+  put(store, key, val){ return this.tx(store, 'readwrite', st => { st.put(val, key); }); },
+  clear(){ return Promise.all([this.tx('parts', 'readwrite', st => { st.clear(); }), this.tx('meta', 'readwrite', st => { st.clear(); })]); },
+};
+function partsSource(parts){
+  let pos = 0; const P = parts.map(b => { const o = { blob: b, start: pos, end: pos + b.size }; pos += b.size; return o; });
+  return { name: 'pack', size: pos, async read(off, len){
+    const out = new Uint8Array(len); let done = 0;
+    for (const p of P){
+      if (p.end <= off || p.start >= off + len) continue;
+      const s = Math.max(off, p.start), e = Math.min(off + len, p.end);
+      out.set(new Uint8Array(await p.blob.slice(s - p.start, e - p.start).arrayBuffer()), s - off); done += e - s;
+    }
+    return out;
+  } };
+}
+function setStatus(t, cls){ const s=$('status'); s.textContent=t; s.className=cls||''; }
+function setProg(f){ const p=$('impProg'); if (f == null){ p.classList.add('hidden'); return; } p.classList.remove('hidden'); p.firstElementChild.style.width = (f*100).toFixed(1)+'%'; }
+async function openStored(){
+  try{
+    const meta = await IDB.get('meta', 'pack');
+    if (!meta){ setStatus('まだデータがありません。「データを読み込む」から読み込んでください。'); return; }
+    const parts = [];
+    for (let i = 0; i < meta.count; i++){ const b = await IDB.get('parts', i); if (!b) throw new Error('保存データが欠けています。読み込み直してください。'); parts.push(b); }
+    game = await E.loadPack(partsSource(parts), n => setStatus('準備中… ' + n));
+    game.fileNames = [...game.arcs.scr.byName.keys()];
+    $('deleteBtn').classList.remove('hidden');
+    $('dataInfo').textContent = '保存済みデータ：' + (meta.total/1e9).toFixed(2) + ' GB（' + meta.count + 'ファイル）';
+    setStatus('準備完了。ルートを選んでください。', 'ok');
+    const probe = document.createElement('audio');
+    if (!probe.canPlayType('audio/ogg; codecs=vorbis')) setStatus('準備完了。※このブラウザはOgg音声に未対応のため音が鳴りません（iPhoneはiOS 18.4以降が必要です）', 'err');
+    refreshStart();
+  }catch(e){ console.error(e); setStatus('エラー: ' + e.message, 'err'); }
+}
+$('importBtn').onclick = () => $('partsInput').click();
+$('partsInput').onchange = async e => {
+  const files = [...e.target.files].filter(f => /lh\.pack\.\d+of\d+$/.test(f.name)).sort((a,b)=>a.name.localeCompare(b.name));
+  e.target.value = '';
+  if (!files.length){ setStatus('lh.pack.001of… という名前のファイルを選んでください。', 'err'); return; }
+  const count = +/of(\d+)$/.exec(files[0].name)[1];
+  const have = new Set(files.map(f => +/\.(\d+)of/.exec(f.name)[1]));
+  const missing = []; for (let i = 1; i <= count; i++) if (!have.has(i)) missing.push(i);
+  if (missing.length){ setStatus('足りないファイルがあります：' + missing.slice(0,10).map(i=>String(i).padStart(3,'0')).join(', ') + (missing.length>10?' ほか':'') + '（全部で' + count + '個必要）', 'err'); return; }
+  try{
+    if (navigator.storage && navigator.storage.persist) await navigator.storage.persist().catch(()=>{});
+    game = null; refreshStart();
+    await IDB.clear();
+    let total = 0;
+    for (let i = 0; i < count; i++){
+      setStatus('保存中… ' + (i+1) + ' / ' + count); setProg(i / count);
+      // copy into memory first so the stored blob does not depend on the picked file
+      const buf = await files[i].arrayBuffer();
+      await IDB.put('parts', i, new Blob([buf]));
+      total += files[i].size;
+    }
+    await IDB.put('meta', 'pack', { count, total, at: Date.now() });
+    setProg(null);
+    await openStored();
+  }catch(err){ console.error(err); setProg(null); setStatus('エラー: ' + ((err && (err.message || err.name)) || '保存に失敗しました') + '（空き容量が足りない可能性があります）', 'err'); }
+};
+$('deleteBtn').onclick = async () => {
+  if (!confirm('この端末に保存したデータを削除しますか？')) return;
+  await IDB.clear(); game = null; $('deleteBtn').classList.add('hidden'); refreshStart(); setStatus('削除しました。');
+};
+openStored();
+
+// ---------------------------------------------------------------- route list
+(function buildRoutes(){
+  const groups = {};
+  for (const r of RT.ROUTES) (groups[r.group] = groups[r.group] || []).push(r);
+  const box = $('routeList');
+  for (const g in groups){
+    const d = document.createElement('div'); d.className='group';
+    d.innerHTML = '<h3>'+g+'</h3>'; const grid = document.createElement('div'); grid.className='routes';
+    for (const r of groups[g]){
+      const b = document.createElement('button'); b.className='route'; b.dataset.id=r.id;
+      b.innerHTML = r.name + '<span class="sub">' + (r.desc||'') + '</span>';
+      b.onclick = () => { selected = r; document.querySelectorAll('.route').forEach(x=>x.classList.toggle('sel', x===b)); refreshStart(); };
+      grid.appendChild(b);
+    }
+    d.appendChild(grid); box.appendChild(d);
+  }
+  $('skipCommon').checked = store.get('skipCommon') ?? true;
+  $('skipCommon').onchange = () => store.set('skipCommon', $('skipCommon').checked);
+})();
+function refreshStart(){
+  $('startBtn').disabled = !(game && selected);
+  const last = store.get('last');
+  const r = last && RT.ROUTES.find(x=>x.id===last.id);
+  if (game && r && last.step > 0){ $('resumeBtn').classList.remove('hidden'); $('resumeBtn').textContent = '続きから：' + r.name + '（' + (last.step+1) + '番目のシーン）'; }
+  else $('resumeBtn').classList.add('hidden');
+}
+const SILENT_WAV = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
+function unlockAudio(){ for (const el of [bgmEl, voEl, ...Array.from({length:8},(_,i)=>seCh[i] || (seCh[i] = new Audio()))]){ try{ if (!el.src){ el.src = SILENT_WAV; } const p = el.play(); p && p.then(()=>{ if (el.src === SILENT_WAV) el.pause(); }).catch(()=>{}); }catch(e){} } }
+$('startBtn').onclick = () => { unlockAudio(); startRoute(selected, !$('skipCommon').checked, 0); };
+$('resumeBtn').onclick = () => { unlockAudio(); const l = store.get('last'); const r = RT.ROUTES.find(x=>x.id===l.id); startRoute(r, l.common, l.step); };
+
+// ---------------------------------------------------------------- media
+const cv = $('cv'), ctx = cv.getContext('2d');
+const imgCache = new Map(); // res index -> {bmp,x,y} | null
+async function getImage(resIdx){
+  if (imgCache.has(resIdx)) return imgCache.get(resIdx);
+  const p = (async () => {
+    const r = game.resolve(game.params.res[resIdx]); if (!r) return null;
+    const d = await r.arc.raw(r.ent);
+    if (r.ent.webp) return { bmp: await createImageBitmap(new Blob([d], { type:'image/webp' })), x: r.ent.x, y: r.ent.y };
+    const im = E.decodeImage(d, r.ent, game.params.key); if (!im) return null;
+    const bmp = await createImageBitmap(new ImageData(im.rgba, im.w, im.h));
+    return { bmp, x: im.x, y: im.y };
+  })();
+  imgCache.set(resIdx, p);
+  if (imgCache.size > 160) imgCache.delete(imgCache.keys().next().value);
+  return p;
+}
+async function compose(layers){
+  const items = [];
+  const sorted = layers.slice().sort((a,b)=>a.z-b.z);
+  for (const L of sorted){ for (const id of (game.params.imgs[L.img]||[])){ if (id) items.push([getImage(id), L.dx, L.dy]); } }
+  const off = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(1024, 600) : Object.assign(document.createElement('canvas'), { width:1024, height:600 }); const c = off.getContext('2d');
+  c.fillStyle = '#000'; c.fillRect(0,0,1024,600);
+  for (const [pr, dx, dy] of items){ const im = await pr; if (im) c.drawImage(im.bmp, im.x + dx, im.y + dy); }
+  return off;
+}
+let shown = null;
+async function showState(layers, fade){
+  const next = await compose(layers);
+  if (play.token !== curToken) return;
+  if (!fade || !shown || play.fast){ ctx.drawImage(next,0,0); shown = next; return; }
+  const prev = shown; shown = next;
+  const t0 = performance.now(), dur = 320;
+  await new Promise(res => {
+    function f(t){ const a = Math.min(1,(t-t0)/dur); ctx.globalAlpha=1; ctx.drawImage(prev,0,0); ctx.globalAlpha=a; ctx.drawImage(next,0,0); ctx.globalAlpha=1;
+      if (a<1 && !play.fast) requestAnimationFrame(f); else { ctx.drawImage(next,0,0); res(); } }
+    requestAnimationFrame(f);
+  });
+}
+
+const urlCache = new Map();
+async function audioUrl(resName){
+  if (urlCache.has(resName)) return urlCache.get(resName);
+  const p = (async()=>{
+    let r;
+    if (/\.voice\d\d$/.test(resName)){ const [stem, a] = resName.split('.'); const arc = game.arcs[a]; const ent = arc && arc.byStem.get(stem); r = ent && { arc, ent }; }
+    else r = game.resolve(resName);
+    if (!r) return null;
+    return URL.createObjectURL(new Blob([await r.arc.raw(r.ent)], { type:'audio/ogg' }));
+  })();
+  urlCache.set(resName, p);
+  if (urlCache.size > 120){ const k = urlCache.keys().next().value; const old = urlCache.get(k); urlCache.delete(k); old.then(u=>u&&setTimeout(()=>URL.revokeObjectURL(u),60000)); }
+  return p;
+}
+const vol = { bgm:()=>$('rBgm').value/100, se:()=>$('rSe').value/100, vo:()=>$('rVo').value/100 };
+const bgmEl = new Audio(); bgmEl.loop = true; let bgmName = null;
+async function setBgm(name){
+  if (name === bgmName) return; bgmName = name;
+  if (!name){ bgmEl.pause(); return; }
+  const u = await audioUrl(name); if (bgmName !== name || !u) return;
+  bgmEl.src = u; bgmEl.volume = vol.bgm(); bgmEl.play().catch(()=>{});
+}
+const seCh = {};
+async function playSe(ch, name){
+  if (ch === 255){ for (const k in seCh){ seCh[k].pause(); } return; }
+  const el = seCh[ch] || (seCh[ch] = new Audio());
+  if (!name){ el.pause(); el.removeAttribute('src'); return; }
+  if (play.fast && ch > 3) return;
+  const u = await audioUrl(name); if (!u) return;
+  el.loop = ch <= 3 || /ループ|^bgf_/.test(name); el.src = u; el.volume = vol.se(); el.play().catch(()=>{});
+}
+const voEl = new Audio();
+$('rBgm').oninput = () => { bgmEl.volume = vol.bgm(); store.set('vol', volState()); };
+$('rSe').oninput = () => { for (const k in seCh) seCh[k].volume = vol.se(); store.set('vol', volState()); };
+$('rVo').oninput = () => { voEl.volume = vol.vo(); store.set('vol', volState()); };
+$('rSpeed').oninput = () => store.set('vol', volState());
+function volState(){ return { b:$('rBgm').value, s:$('rSe').value, v:$('rVo').value, w:$('rSpeed').value }; }
+(function(){ const v = store.get('vol'); if (v){ $('rBgm').value=v.b; $('rSe').value=v.s; $('rVo').value=v.v; $('rSpeed').value=v.w; } })();
+function stopAudio(){ bgmEl.pause(); bgmName = null; for (const k in seCh) seCh[k].pause(); voEl.pause(); }
+
+// ---------------------------------------------------------------- playback
+const play = { auto:true, fast:false, token:0, advance:null, runner:null, steps:[], route:null, common:false, step:0 };
+let curToken = 0;
+function waitAdvance(ms){
+  return new Promise(res => {
+    let done = false; const fin = () => { if (!done){ done = true; play.advance = null; clearTimeout(t); res(); } };
+    play.advance = fin;
+    const t = ms != null ? setTimeout(fin, ms) : null;
+  });
+}
+function setAuto(on){ play.auto = on; $('bAuto').classList.toggle('on', on); $('bAuto').textContent = on ? '▶ オート' : '⏸ 手動'; if (on && play.advance && !play.voicePlaying) play.advance(); }
+
+function makeHost(tk){ const alive = () => tk === curToken; return {
+  async state(layers, fade){ if (alive()) await showState(layers, fade); },
+  async message(m){
+    if (!alive()) return;
+    $('box').classList.remove('off');
+    $('name').textContent = m.speaker || '';
+    $('text').textContent = m.text.replace(/[\uE000-\uF8FF]/g, '太壱');
+    if (play.fast){ await new Promise(r=>setTimeout(r, 25)); return; }
+    let voiceDone = Promise.resolve();
+    voEl.pause();
+    if (m.voice){
+      const u = await audioUrl(m.voice);
+      if (u && alive()){
+        voEl.src = u; voEl.volume = vol.vo(); play.voicePlaying = true;
+        voiceDone = new Promise(r => { voEl.onended = r; voEl.onerror = r; voEl.play().catch(r); });
+        voiceDone.then(()=>{ play.voicePlaying = false; });
+      }
+    }
+    const extra = +$('rSpeed').value;
+    if (play.auto){
+      // wait for the voice (or reading time) unless the user clicks
+      const reading = Math.max(1100, m.text.length * 75);
+      const adv = waitAdvance(null);
+      const timer = m.voice ? voiceDone.then(()=>new Promise(r=>setTimeout(r, extra))) : new Promise(r=>setTimeout(r, reading + extra));
+      await Promise.race([adv, timer.then(()=>{ if (play.advance) play.advance(); })]);
+      // switching auto off mid-line waits for a click
+      if (!play.auto && alive()) await waitAdvance(null);
+    } else {
+      await waitAdvance(null);
+    }
+    if (m.voice && voEl.currentTime > 0 && !voEl.ended) voEl.pause();
+  },
+  bgm(n){ if (alive()) setBgm(n); },
+  se(ch, n){ if (alive()) playSe(ch, n); },
+  async wait(ms){ if (alive() && !play.fast) await new Promise(r=>setTimeout(r, ms)); },
+  window(on){ if (alive() && !on) $('box').classList.add('off'); },
+  call(n){ if (alive()) setTag(n); },
+}; }
+function label(n){ return n.replace(/\.scr$/,'').replace(/\u3000/g,' '); }
+function setTag(n){ $('sceneTag').textContent = label(n); }
+
+function renderSceneList(){
+  const ol = $('sceneList'); ol.innerHTML = '';
+  play.steps.forEach((st, i) => {
+    const li = document.createElement('li'); li.textContent = (i+1) + '. ' + label(st.s);
+    li.className = i === play.step ? 'cur' : i < play.step ? 'done' : '';
+    li.onclick = () => { $('scenes').classList.add('hidden'); startRoute(play.route, play.common, i); };
+    ol.appendChild(li);
+  });
+  const cur = ol.children[play.step]; if (cur) cur.scrollIntoView({ block:'center' });
+}
+
+async function startRoute(route, includeCommon, startAt){
+  stopRun();
+  const token = ++curToken; play.token = token;
+  $('setup').classList.add('hidden'); $('player').classList.remove('hidden'); $('endCard').classList.add('hidden');
+  ctx.fillStyle='#000'; ctx.fillRect(0,0,1024,600); shown = null; $('box').classList.add('off');
+  play.route = route; play.common = includeCommon;
+  play.steps = RT.expand(route, includeCommon, game.fileNames);
+  const runner = new E.Runner(game, makeHost(token)); play.runner = runner;
+  try{
+    await runner.runSteps(play.steps, (i, st) => {
+      play.step = i; setTag(st.s);
+      $('prog').textContent = route.name + '　' + (i+1) + ' / ' + play.steps.length;
+      store.set('last', { id: route.id, common: includeCommon, step: i });
+      if (!$('scenes').classList.contains('hidden')) renderSceneList();
+    }, startAt);
+  }catch(e){ console.error(e); alert('再生中にエラーが発生しました: ' + e.message); }
+  if (token !== curToken) return;
+  stopAudio(); $('box').classList.add('off');
+  $('endText').textContent = route.name + '　おわり';
+  $('endCard').classList.remove('hidden');
+  store.set('last', null);
+}
+function stopRun(){
+  if (play.runner){ play.runner.stop = true; }
+  curToken++; play.token = curToken;
+  if (play.advance) play.advance();
+  stopAudio();
+}
+function backToMenu(){ stopRun(); play.fast = false; $('bFast').classList.remove('on'); $('player').classList.add('hidden'); $('setup').classList.remove('hidden'); refreshStart(); }
+
+$('bMenu').onclick = backToMenu; $('endBack').onclick = backToMenu;
+$('bAuto').onclick = () => setAuto(!play.auto);
+$('bNext').onclick = () => { if (play.advance) play.advance(); };
+$('box').onclick = () => { if (play.advance) play.advance(); };
+$('cv').onclick = () => { if (play.advance) play.advance(); };
+$('bSkipScene').onclick = () => { if (play.runner){ play.runner.abortStep = true; voEl.pause(); for (const k in seCh) seCh[k].pause(); if (play.advance) play.advance(); } };
+$('bFast').onclick = () => { play.fast = !play.fast; $('bFast').classList.toggle('on', play.fast); if (play.fast){ voEl.pause(); if (play.advance) play.advance(); } };
+$('bVol').onclick = () => $('bar').classList.toggle('showvol');
+$('bList').onclick = () => { const s=$('scenes'); s.classList.toggle('hidden'); if (!s.classList.contains('hidden')) renderSceneList(); };
+document.addEventListener('keydown', e => {
+  if ($('player').classList.contains('hidden')) return;
+  if (e.key === ' ' || e.key === 'Enter'){ e.preventDefault(); if (play.advance) play.advance(); }
+  else if (e.key === 'a' || e.key === 'A') setAuto(!play.auto);
+  else if (e.key === 's' || e.key === 'S') $('bSkipScene').click();
+  else if (e.key === 'l' || e.key === 'L') $('bList').click();
+  else if (e.key === 'Escape') backToMenu();
+  else if (e.key === 'Control' && !play.fast){ play.fast = true; voEl.pause(); if (play.advance) play.advance(); }
+});
+document.addEventListener('keyup', e => { if (e.key === 'Control'){ play.fast = false; $('bFast').classList.remove('on'); } });
+if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(()=>{});
+</script>
+</body>
+</html>
