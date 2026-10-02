@@ -49,7 +49,7 @@ label.chk{display:flex;gap:8px;align-items:center;cursor:pointer}
 /* ---------- player */
 #player{position:fixed;inset:0;display:flex;flex-direction:column;background:#000}
 #stage{position:relative;flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden}
-#screen{position:relative;aspect-ratio:1024/600;width:min(100vw,calc((100vh - 52px) * 1024 / 600));max-height:calc(100vh - 52px)}
+#screen{position:relative;aspect-ratio:var(--arw,1024)/var(--arh,600);width:min(100vw,calc((100vh - 52px) * var(--arw,1024) / var(--arh,600)));max-height:calc(100vh - 52px)}
 canvas{width:100%;height:100%;display:block;background:#000}
 #box{position:absolute;left:3%;right:3%;bottom:3%;min-height:24%;background:linear-gradient(180deg,rgba(20,14,26,.78),rgba(20,14,26,.9));
   border:1px solid rgba(255,255,255,.14);border-radius:12px;padding:2.2% 3% 2.4%;font-size:calc(clamp(13px,2.05vw,21px) * var(--fs,1));line-height:1.65;
@@ -87,7 +87,7 @@ html,body{-webkit-text-size-adjust:100%;touch-action:manipulation}
   #bar button{padding:6px 8px;font-size:13px}
   #bar label{display:none}
   #bar.showvol label{display:flex}
-  #screen{width:min(100vw,calc((100vh - 46px) * 1024 / 600))}
+  #screen{width:min(100vw,calc((100vh - 46px) * var(--arw,1024) / var(--arh,600)))}
 }
 @media (orientation: portrait){
   #stage{align-items:flex-start;padding-top:8px}
@@ -105,6 +105,9 @@ html,body{-webkit-text-size-adjust:100%;touch-action:manipulation}
 .cfgbox input[type=range]{width:100%;accent-color:var(--accent)}
 .cfgbox label.chk{margin:8px 0;font-size:14px}
 .cfgsample{margin:14px 0 0;padding:12px 14px;background:rgba(20,14,26,.9);border-radius:10px;border:1px solid rgba(255,255,255,.14);min-height:3.4em;line-height:1.65}
+#gameTabs{display:flex;gap:8px;margin:0 0 16px}
+#gameTabs button{flex:1;padding:12px;font-size:16px;font-weight:600}
+#gameTabs button.on{background:var(--accent);border-color:var(--accent);color:#fff}
 </style>
 </head>
 <body>
@@ -113,6 +116,7 @@ html,body{-webkit-text-size-adjust:100%;touch-action:manipulation}
   <h1>LHビューア <small>選択肢なしでルートを流し見</small></h1>
   <p class="lead">データは一度読み込めば、この端末の中に保存されてオフラインで再生できます。どこにも送信しません。</p>
 
+  <div id="gameTabs"></div>
   <div class="card">
     <h2>1. データ</h2>
     <div id="dataInfo">PCで作った分割データ（lh.pack.001of… のファイル）を読み込みます。一度に全部でも、10個ずつなど何回かに分けてもOKです。</div>
@@ -291,7 +295,7 @@ function parseParams(b) {
   let key = null;
   for (let q = 0x400; q < b.length - 4; q++) {
     const n = u32(b, q);
-    if (n === 1024 * 600 * 4 && q + 4 + n <= b.length) { key = b.slice(q + 4, q + 4 + n); break; }
+    if ((n === 1024 * 600 * 4 || n === 1280 * 720 * 4 || n === 800 * 600 * 4 || n === 1920 * 1080 * 4) && q + 4 + n <= b.length) { key = b.slice(q + 4, q + 4 + n); break; }
   }
   return { res, imgs, key };
 }
@@ -326,7 +330,7 @@ function parseMessages(b) {
 
 // ---------------------------------------------------------------- scripts
 function parseScript(name, b) {
-  if (ascii(b, 0, 12) !== '[SCR-Ver5.1]') throw new Error(name + ': bad header');
+  if (ascii(b, 0, 9) !== '[SCR-Ver5') throw new Error(name + ': bad header');
   const clen = u32(b, 12);
   const ins = [];           // {pos, op, p}
   const at = new Map();     // file offset -> instruction index
@@ -362,6 +366,23 @@ function parseScript(name, b) {
 
 // static analysis of choice menus: returns plan info per script
 // For each "cmp v0 == K / jf T" find first "v112 = X" in branch (affection gain) and whether it sets v111 = 0
+// per explicit choice (op08): variable changes caused by each option
+function choiceDeltas(sc) {
+  const ins = sc.ins; const out = new Map();
+  ins.forEach((x, i) => {
+    if (x.op !== 8) return;
+    let j = i + 1; while (j < ins.length && !(ins[j].op === 0x0d && ins[j].p[0] === 0x12 && u32(ins[j].p, 4) === 0)) j++;
+    if (j + 1 >= ins.length || ins[j + 1].op !== 0x0f) return;
+    const T = sc.at.get(u32(ins[j + 1].p, 3)); if (T == null) return;
+    const g = ins[T - 1]; const M = g.op === 0x0b ? sc.at.get(u32(g.p, 0)) : T;
+    const delta = (a, b) => { const d = {}; for (let k = a; k < b && k < ins.length; k++) { const y = ins[k]; if (y.op !== 1) continue; const vv = u16(y.p, 2);
+      if (y.p[0] === 0x12) d[vv] = (d[vv] || 0) + (y.p[1] === 1 ? i32(y.p, 8) : y.p[1] === 2 ? -i32(y.p, 8) : 0);
+      else if (y.p[0] === 0x18 && vv >= 40) d[vv] = (d[vv] || 0) + 1; } return d; };
+    out.set(x.pos, [delta(j + 2, T), delta(T, M == null ? T : M)]);
+  });
+  return out;
+}
+
 function analyzeChoices(sc) {
   const ins = sc.ins; const gains = {}; const ends = {};
   const isCmpV0 = (x) => x.op === 0x0d && x.p[0] === 0x12 && x.p[1] === 0 && u32(x.p, 4) === 0;
@@ -421,7 +442,7 @@ function makeGame(params, msg, arcs) {
     const ent = scrArc.byName.get(name);
     if (!ent) throw new Error('script not found: ' + name);
     const sc = parseScript(name, await scrArc.raw(ent));
-    sc.choice = analyzeChoices(sc);
+    sc.choice = analyzeChoices(sc); sc.deltas = choiceDeltas(sc);
     scripts.set(name, sc); return sc;
   }
   function resolve(resName) { // "X.cg00" -> {arc, ent}
@@ -444,6 +465,7 @@ async function loadPack(src, progress) {
   const meta = JSON.parse(new TextDecoder().decode(await src.read(12, n)));
   const base = 12 + n;
   const arcs = {}; const core = {};
+  const screen = { w: meta.w || 1024, h: meta.h || 600 }; const gameId = meta.game || 'love';
   for (const key in meta.index) {
     const [off, size, kind, a1, a2] = meta.index[key];
     const sl = key.indexOf('/');
@@ -458,7 +480,7 @@ async function loadPack(src, progress) {
   progress && progress('設定');
   const params = parseParams(await src.read(core['params.dat'].off, core['params.dat'].size));
   const msg = parseMessages(await src.read(core['message.dat'].off, core['message.dat'].size));
-  return makeGame(params, msg, arcs);
+  const g = makeGame(params, msg, arcs); g.screen = screen; g.gameId = gameId; return g;
 }
 
 // ---------------------------------------------------------------- interpreter
@@ -508,14 +530,16 @@ class Runner {
           }
           break;
         }
-        case 0x0d: {
-          const t = p[0], k = p[1]; const a = v[u32(p, 4)];
+        case 0x0d: { // result -> v[dest]; 0x22 with 6/7 = AND/OR of two flags
+          const t = p[0], k = p[1], dest = u16(p, 2); const a = v[u32(p, 4)];
           const b = t === 0x22 ? v[u32(p, 8)] : i32(p, 8);
-          flag = k === 0 ? a === b : k === 1 ? a !== b : k === 2 ? a < b : k === 3 ? a <= b : k === 4 ? a > b : k === 5 ? a >= b : false;
+          const r = k === 0 ? a === b : k === 1 ? a !== b : k === 2 ? a < b : k === 3 ? a <= b : k === 4 ? a > b : k === 5 ? a >= b
+                  : k === 6 ? (a !== 0 && b !== 0) : k === 7 ? (a !== 0 || b !== 0) : false;
+          v[dest] = r ? 1 : 0;
           break;
         }
-        case 0x0f: if (!flag) pc = this.jump(sc, u32(p, 3)); break;
-        case 0x0e: if (flag) pc = this.jump(sc, u32(p, 3)); break;
+        case 0x0f: if (!v[u16(p, 1)]) pc = this.jump(sc, u32(p, 3)); break;
+        case 0x0e: if (v[u16(p, 1)]) pc = this.jump(sc, u32(p, 3)); break;
         case 0x0b: pc = this.jump(sc, u32(p, 0)); break;
         case 0x1a: if (depth < 8) { this.h.call && this.h.call(R[u32(p, 1)]); await this.call(R[u32(p, 1)], depth + 1); } break;
         case 0x0c: return;            // jump to system script: end of this scene
@@ -543,7 +567,14 @@ class Runner {
           else if (c === 0x13) v[0] = plan.next();                                         // in-scene menu
           break;
         }
-        case 0x08: v[0] = plan.choice(); break;                                          // explicit choice
+        case 0x08: {                                                                      // explicit choice
+          const pref = this.route && this.route.pref; const dl = pref && sc.deltas.get(x.pos);
+          if (dl) { // pick the option whose variable changes best match the route's preference (+1 maximise, -1 minimise)
+            const score = d => Object.keys(d).reduce((t, k) => t + (pref[k] || 0) * d[k], 0);
+            const s0 = score(dl[0]), s1 = score(dl[1]); v[0] = s1 > s0 ? 1 : 0;
+          } else v[0] = plan.choice();
+          break;
+        }
         case 0x17: this.h.window && this.h.window(true); break;
         case 0x18: this.h.window && this.h.window(false); break;
         default: break;
@@ -652,7 +683,7 @@ function bgraFlip(d, off, w, h) {
   return rgba;
 }
 
-global.LHEngine = { loadPack, unpackBMR, openArc, parseParams, parseMessages, parseScript, analyzeChoices, loadGame, Runner, decodeImage, u32, i32 };
+global.LHEngine = { choiceDeltas, loadPack, unpackBMR, openArc, parseParams, parseMessages, parseScript, analyzeChoices, loadGame, Runner, decodeImage, u32, i32 };
 })(typeof window !== 'undefined' ? window : globalThis);
 </script>
 <script>// Route definitions: which scenes to play, in order, and which flags to assume.
@@ -717,15 +748,60 @@ const ROUTES = [
       { s: 'ハーレムルート.scr', set: { 65: 1000, 66: 1000, 67: 1000, 57: 1, 60: 1, 73: 0 } }] },
 ];
 
-function expand(route, includeCommon, fileNames) {
+// ================================================================ Mama×Holic
+const M_COMMON = ['A0000', 'A0010', 'A0020', 'A0030', 'A0040', 'A0050', 'A0060', 'A0070', 'A0080', 'A0090', 'A0100', 'B0000', 'B0010'];
+const M_PERSONAL = { C: '個人ルート（Ｃ　舞凍）.scr', D: '個人ルート（Ｄ　夜叉）.scr', E: '個人ルート（Ｅ　サリー）.scr', F: '個人ルート（Ｆ　茜）.scr', G: '個人ルート（Ｇ　ミーメ）.scr' };
+// [progress var, bond stat, lust stat]
+const M_VARS = { C: [52, 44, 45], D: [53, 46, 47], E: [54, 48, 49] };
+function mChain(P, pref, n) { // n events: P0000, P0010, ... ; stage = 10*k
+  const pv = { C: 52, D: 53, E: 54, F: 55, G: 56 }[P];
+  return Array.from({ length: n }, (_, k) => ({ s: P + String(k * 10).padStart(4, '0'), set: { [pv]: k * 10 }, pref }));
+}
+// ending: 1 = (bond max, lust low) , 2 = (bond max, lust max), 3 = (bond low)
+function mMain(P, end) {
+  const [pv, bond, lust] = M_VARS[P];
+  const pref = end === 1 ? { [bond]: 1, [lust]: -1 } : end === 2 ? { [bond]: 1, [lust]: 1 } : { [bond]: -1, [lust]: -1 };
+  return [...mChain(P, pref, 15), { s: M_PERSONAL[P], set: { [pv]: end === 1 ? 1000 : end === 2 ? 3000 : 5000 }, pref }];
+}
+function mSub(P, end) { // 茜 (F, unlocked in 舞凍's C0030) / ミーメ (G, unlocked in サリー's E0030)
+  const [stat, pv, intro, flag] = P === 'F' ? [50, 55, 'C0030', 55] : [51, 56, 'E0030', 56];
+  const pref = { [stat]: end === 1 ? 1 : -1 };
+  return [{ s: intro, pref: { [flag]: 1 } }, ...mChain(P, pref, 10), { s: M_PERSONAL[P], set: { [pv]: end === 1 ? 1000 : 3000 }, pref }];
+}
+const M_ROUTES = [
+  { id: 'm_mai1', group: 'メインヒロイン', name: '舞凍 END1', desc: '好感度◎・欲望控えめ', steps: () => mMain('C', 1) },
+  { id: 'm_mai2', group: 'メインヒロイン', name: '舞凍 END2', desc: '好感度◎・欲望◎', steps: () => mMain('C', 2) },
+  { id: 'm_mai3', group: 'メインヒロイン', name: '舞凍 END3', desc: '好感度低め', steps: () => mMain('C', 3) },
+  { id: 'm_yasha1', group: 'メインヒロイン', name: '夜叉 END1', desc: '好感度◎・欲望控えめ', steps: () => mMain('D', 1) },
+  { id: 'm_yasha2', group: 'メインヒロイン', name: '夜叉 END2', desc: '好感度◎・欲望◎', steps: () => mMain('D', 2) },
+  { id: 'm_yasha3', group: 'メインヒロイン', name: '夜叉 END3', desc: '好感度低め', steps: () => mMain('D', 3) },
+  { id: 'm_sally1', group: 'メインヒロイン', name: 'サリー END1', desc: '好感度◎・欲望控えめ', steps: () => mMain('E', 1) },
+  { id: 'm_sally2', group: 'メインヒロイン', name: 'サリー END2', desc: '好感度◎・欲望◎', steps: () => mMain('E', 2) },
+  { id: 'm_sally3', group: 'メインヒロイン', name: 'サリー END3', desc: '好感度低め', steps: () => mMain('E', 3) },
+  { id: 'm_akane1', group: 'サブキャラ', name: '茜 END1', desc: '出会いの場面＋茜のイベント（好感度◎）', steps: () => mSub('F', 1) },
+  { id: 'm_akane2', group: 'サブキャラ', name: '茜 END2', desc: '出会いの場面＋茜のイベント（好感度低め）', steps: () => mSub('F', 2) },
+  { id: 'm_mime1', group: 'サブキャラ', name: 'ミーメ END1', desc: '出会いの場面＋ミーメのイベント（好感度◎）', steps: () => mSub('G', 1) },
+  { id: 'm_mime2', group: 'サブキャラ', name: 'ミーメ END2', desc: '出会いの場面＋ミーメのイベント（好感度低め）', steps: () => mSub('G', 2) },
+  { id: 'm_harem', group: 'その他', name: 'ハーレムEND', desc: '舞凍→夜叉→サリー→ハーレム（全員◎）', steps: () => {
+      const all = { 44: 1, 45: 1, 46: 1, 47: 1, 48: 1, 49: 1 };
+      return [...mChain('C', all, 15), ...mChain('D', all, 15), ...mChain('E', all, 15), { s: 'ハーレムルート.scr', set: { 57: 0 }, pref: all }]; } },
+];
+
+const GAMES = {
+  love: { id: 'love', name: 'Love×Holic', common: COMMON, routes: ROUTES },
+  mama: { id: 'mama', name: 'Mama×Holic', common: M_COMMON, routes: M_ROUTES },
+};
+
+function expand(route, includeCommon, fileNames, game) {
   const full = code => fileNames.find(n => n === code || n.startsWith(code + '　')) || code;
   const steps = [];
-  if (includeCommon) for (const c of COMMON) steps.push({ s: c, common: true });
+  const common = (game && GAMES[game] ? GAMES[game].common : COMMON);
+  if (includeCommon) for (const c of common) steps.push({ s: c, common: true });
   steps.push(...route.steps());
   return steps.map(st => Object.assign({}, st, { s: full(st.s) }));
 }
 
-global.LHRoutes = { ROUTES, expand };
+global.LHRoutes = { ROUTES, GAMES, expand };
 })(typeof window !== 'undefined' ? window : globalThis);
 </script>
 <script>
@@ -738,9 +814,13 @@ const store = { get(k){ try{ return JSON.parse(localStorage.getItem('lhv:'+k)); 
 let game = null, selected = null;
 
 // ---------------------------------------------------------------- data storage (IndexedDB, parts kept as Blobs)
-const IDB = {
+const GAME_DEF = { love: { db: 'lhviewer', prefix: 'lh' }, mama: { db: 'lhviewer-mama', prefix: 'mh' } };
+let curGame = RT.GAMES[store.get('game')] ? store.get('game') : 'love';
+const loaded = {};
+const IDBS = {};
+function makeIDB(dbName){ return {
   db: null,
-  open(){ return this.db || (this.db = new Promise((res, rej) => { const r = indexedDB.open('lhviewer', 1);
+  open(){ return this.db || (this.db = new Promise((res, rej) => { const r = indexedDB.open(dbName, 1);
     r.onupgradeneeded = () => { r.result.createObjectStore('parts'); r.result.createObjectStore('meta'); };
     r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); })); },
   async tx(store, mode, fn){ const db = await this.open(); return new Promise((res, rej) => { const t = db.transaction(store, mode); const st = t.objectStore(store); const out = fn(st);
@@ -748,7 +828,8 @@ const IDB = {
   get(store, key){ return this.tx(store, 'readonly', st => st.get(key)); },
   put(store, key, val){ return this.tx(store, 'readwrite', st => { st.put(val, key); }); },
   clear(){ return Promise.all([this.tx('parts', 'readwrite', st => { st.clear(); }), this.tx('meta', 'readwrite', st => { st.clear(); })]); },
-};
+}; }
+const IDB = new Proxy({}, { get: (_, k) => { const g = curGame; const db = IDBS[g] || (IDBS[g] = makeIDB(GAME_DEF[g].db)); const v = db[k]; return typeof v === 'function' ? v.bind(db) : v; } });
 function partsSource(parts){
   let pos = 0; const P = parts.map(b => { const o = { blob: b, start: pos, end: pos + b.size }; pos += b.size; return o; });
   return { name: 'pack', size: pos, async read(off, len){
@@ -764,6 +845,11 @@ function partsSource(parts){
 function setStatus(t, cls){ const s=$('status'); s.textContent=t; s.className=cls||''; }
 function setProg(f){ const p=$('impProg'); if (f == null){ p.classList.add('hidden'); return; } p.classList.remove('hidden'); p.firstElementChild.style.width = (f*100).toFixed(1)+'%'; }
 async function openStored(){
+  const gid = curGame;
+  $('deleteBtn').classList.add('hidden');
+  $('dataInfo').textContent = '分割データ（' + GAME_DEF[gid].prefix + '.pack.001of… のファイル）を読み込みます。一度に全部でも、10個ずつなど何回かに分けてもOKです。';
+  if (loaded[gid]){ game = loaded[gid]; $('deleteBtn').classList.remove('hidden'); setStatus('準備完了。ルートを選んでください。', 'ok'); refreshStart(); return; }
+  game = null; refreshStart();
   try{
     const meta = await IDB.get('meta', 'pack');
     if (!meta){
@@ -774,8 +860,9 @@ async function openStored(){
     }
     const parts = [];
     for (let i = 0; i < meta.count; i++){ const b = await IDB.get('parts', i); if (!b) throw new Error('保存データが欠けています。読み込み直してください。'); parts.push(b); }
-    game = await E.loadPack(partsSource(parts), n => setStatus('準備中… ' + n));
-    game.fileNames = [...game.arcs.scr.byName.keys()];
+    const g = await E.loadPack(partsSource(parts), n => setStatus('準備中… ' + n));
+    g.fileNames = [...g.arcs.scr.byName.keys()];
+    loaded[gid] = g; if (gid !== curGame) return; game = g;
     $('deleteBtn').classList.remove('hidden');
     $('dataInfo').textContent = '保存済みデータ：' + (meta.total/1e9).toFixed(2) + ' GB（' + meta.count + 'ファイル）';
     setStatus('準備完了。ルートを選んでください。', 'ok');
@@ -787,9 +874,12 @@ async function openStored(){
 $('importBtn').onclick = () => $('partsInput').click();
 $('importBtn').addEventListener('click', () => setStatus('ファイルを選んでください。選んだあと、iPhoneがファイルを受け取るまで数分かかることがあります（画面はそのままで待ってください）。'));
 $('partsInput').onchange = async e => {
-  const files = [...e.target.files].filter(f => /lh\.pack\.\d+of\d+$/.test(f.name)).sort((a,b)=>a.name.localeCompare(b.name));
+  let files = [...e.target.files].filter(f => /^(lh|mh)\.pack\.\d+of\d+$/.test(f.name)).sort((a,b)=>a.name.localeCompare(b.name));
   e.target.value = '';
-  if (!files.length){ setStatus('lh.pack.001of… という名前のファイルを選んでください。', 'err'); return; }
+  if (!files.length){ setStatus(GAME_DEF[curGame].prefix + '.pack.001of… という名前のファイルを選んでください。', 'err'); return; }
+  const pre = files[0].name.slice(0, 2); const gidFor = Object.keys(GAME_DEF).find(k => GAME_DEF[k].prefix === pre);
+  files = files.filter(f => f.name.startsWith(pre));
+  if (gidFor !== curGame) await switchGame(gidFor, true);
   const count = +/of(\d+)$/.exec(files[0].name)[1];
   if (importing) return; importing = true; $('importBtn').disabled = true;
   try{
@@ -827,15 +917,14 @@ $('partsInput').onchange = async e => {
 let importing = false;
 $('deleteBtn').onclick = async () => {
   if (!confirm('この端末に保存したデータを削除しますか？')) return;
-  await IDB.clear(); game = null; $('deleteBtn').classList.add('hidden'); refreshStart(); setStatus('削除しました。');
+  await IDB.clear(); delete loaded[curGame]; game = null; $('deleteBtn').classList.add('hidden'); refreshStart(); setStatus('削除しました。');
 };
-openStored();
 
 // ---------------------------------------------------------------- route list
-(function buildRoutes(){
+function buildRoutes(){
   const groups = {};
-  for (const r of RT.ROUTES) (groups[r.group] = groups[r.group] || []).push(r);
-  const box = $('routeList');
+  for (const r of RT.GAMES[curGame].routes) (groups[r.group] = groups[r.group] || []).push(r);
+  const box = $('routeList'); box.innerHTML = '';
   for (const g in groups){
     const d = document.createElement('div'); d.className='group';
     d.innerHTML = '<h3>'+g+'</h3>'; const grid = document.createElement('div'); grid.className='routes';
@@ -847,18 +936,25 @@ openStored();
     }
     d.appendChild(grid); box.appendChild(d);
   }
-  $('skipCommon').checked = store.get('skipCommon') ?? true;
-  $('skipCommon').onchange = () => store.set('skipCommon', $('skipCommon').checked);
-})();
+}
+async function switchGame(gid, noLoad){
+  curGame = gid; store.set('game', gid); selected = null;
+  document.querySelectorAll('#gameTabs button').forEach(b => b.classList.toggle('on', b.dataset.g === gid));
+  buildRoutes(); if (!noLoad) await openStored(); else { game = loaded[gid] || null; refreshStart(); }
+}
+for (const gid in RT.GAMES){ const b = document.createElement('button'); b.dataset.g = gid; b.textContent = RT.GAMES[gid].name; b.onclick = () => { if (gid !== curGame && !importing) switchGame(gid); }; $('gameTabs').appendChild(b); }
+$('skipCommon').checked = store.get('skipCommon') ?? true;
+$('skipCommon').onchange = () => store.set('skipCommon', $('skipCommon').checked);
 const progOf = id => store.get('prog:' + id);
+const lastKey = () => curGame === 'love' ? 'lastRoute' : 'lastRoute:' + curGame;
 function refreshStart(){
   const p = selected && progOf(selected.id);
   $('startBtn').disabled = !(game && selected);
   $('startBtn').textContent = p ? '続きから再生（' + (p.step+1) + '番目のシーン）' : '再生開始';
   $('restartBtn').classList.toggle('hidden', !(game && p));
   if (p) $('skipCommon').checked = !p.common;
-  const lastId = store.get('lastRoute'); const lp = lastId && progOf(lastId);
-  const r = lp && RT.ROUTES.find(x=>x.id===lastId);
+  const lastId = store.get(lastKey()); const lp = lastId && progOf(lastId);
+  const r = lp && RT.GAMES[curGame].routes.find(x=>x.id===lastId);
   if (game && r && (!selected || selected.id !== lastId)){ $('resumeBtn').classList.remove('hidden'); $('resumeBtn').textContent = '前回の続き：' + r.name + '（' + (lp.step+1) + '番目のシーン）'; }
   else $('resumeBtn').classList.add('hidden');
   document.querySelectorAll('.route').forEach(b => { const q = progOf(b.dataset.id); b.querySelector('.cont') && b.querySelector('.cont').remove();
@@ -869,7 +965,7 @@ function unlockAudio(){ for (const el of [bgmEl, voEl, ...Array.from({length:8},
 $('startBtn').onclick = () => { unlockAudio(); const p = progOf(selected.id);
   if (p) startRoute(selected, p.common, p.step, p.line); else startRoute(selected, !$('skipCommon').checked, 0, 0); };
 $('restartBtn').onclick = () => { if (!confirm('途中の記録を消して最初から再生しますか？')) return; unlockAudio(); store.set('prog:' + selected.id, null); startRoute(selected, !$('skipCommon').checked, 0, 0); };
-$('resumeBtn').onclick = () => { unlockAudio(); const id = store.get('lastRoute'); const p = progOf(id); const r = RT.ROUTES.find(x=>x.id===id); if (r && p) startRoute(r, p.common, p.step, p.line); };
+$('resumeBtn').onclick = () => { unlockAudio(); const id = store.get(lastKey()); const p = progOf(id); const r = RT.GAMES[curGame].routes.find(x=>x.id===id); if (r && p) startRoute(r, p.common, p.step, p.line); };
 $('skipCommon').addEventListener('change', () => { if (selected && progOf(selected.id)) refreshStart(); });
 
 // ---------------------------------------------------------------- media
@@ -893,8 +989,9 @@ async function compose(layers){
   const items = [];
   const sorted = layers.slice().sort((a,b)=>a.z-b.z);
   for (const L of sorted){ for (const id of (game.params.imgs[L.img]||[])){ if (id) items.push([getImage(id), L.dx, L.dy]); } }
-  const off = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(1024, 600) : Object.assign(document.createElement('canvas'), { width:1024, height:600 }); const c = off.getContext('2d');
-  c.fillStyle = '#000'; c.fillRect(0,0,1024,600);
+  const W = cv.width, H = cv.height;
+  const off = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(W, H) : Object.assign(document.createElement('canvas'), { width:W, height:H }); const c = off.getContext('2d');
+  c.fillStyle = '#000'; c.fillRect(0,0,W,H);
   for (const [pr, dx, dy] of items){ const im = await pr; if (im) c.drawImage(im.bmp, im.x + dx, im.y + dy); }
   return off;
 }
@@ -1006,7 +1103,7 @@ function makeHost(tk){ const alive = () => tk === curToken; const seek = play.se
       for (const ch in seek.loops) if (seek.loops[ch]) playSe(+ch, seek.loops[ch]);
     }
     store.set('prog:' + play.route.id, { common: play.common, step: play.step, line: lineNo, at: Date.now() });
-    store.set('lastRoute', play.route.id);
+    store.set(lastKey(), play.route.id);
     $('box').classList.remove('off');
     $('name').textContent = m.speaker || '';
     const full = m.text.replace(/[-]/g, '太壱');
@@ -1066,9 +1163,13 @@ async function startRoute(route, includeCommon, startAt, startLine){
   play.seekState = { on: (startLine|0) > 0, target: startLine|0, layers: null, bgm: null, loops: {} };
   const token = ++curToken; play.token = token;
   $('setup').classList.add('hidden'); $('player').classList.remove('hidden'); $('endCard').classList.add('hidden');
-  ctx.fillStyle='#000'; ctx.fillRect(0,0,1024,600); shown = null; $('box').classList.add('off');
+  const scr = game.screen || { w:1024, h:600 };
+  if (cv.width !== scr.w || cv.height !== scr.h){ cv.width = scr.w; cv.height = scr.h; }
+  if (play.cacheGame !== curGame){ imgCache.clear(); urlCache.clear(); play.cacheGame = curGame; }
+  document.documentElement.style.setProperty('--arw', scr.w); document.documentElement.style.setProperty('--arh', scr.h);
+  ctx.fillStyle='#000'; ctx.fillRect(0,0,cv.width,cv.height); shown = null; $('box').classList.add('off');
   play.route = route; play.common = includeCommon;
-  play.steps = RT.expand(route, includeCommon, game.fileNames);
+  play.steps = RT.expand(route, includeCommon, game.fileNames, curGame);
   const runner = new E.Runner(game, makeHost(token)); play.runner = runner;
   try{
     await runner.runSteps(play.steps, (i, st) => {
@@ -1076,7 +1177,7 @@ async function startRoute(route, includeCommon, startAt, startLine){
       play.step = i; setTag(st.s);
       $('prog').textContent = route.name + '　' + (i+1) + ' / ' + play.steps.length;
       if (!play.seekState.on) store.set('prog:' + route.id, { common: includeCommon, step: i, line: 0, at: Date.now() });
-      store.set('lastRoute', route.id);
+      store.set(lastKey(), route.id);
       if (!$('scenes').classList.contains('hidden')) renderSceneList();
     }, startAt);
   }catch(e){ console.error(e); alert('再生中にエラーが発生しました: ' + e.message); }
@@ -1113,6 +1214,7 @@ document.addEventListener('keydown', e => {
 });
 document.addEventListener('keyup', e => { if (e.key === 'Control'){ play.fast = false; $('bFast').classList.remove('on'); } });
 applyCfg();
+switchGame(curGame);
 if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(()=>{});
 </script>
 </body>
