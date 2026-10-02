@@ -12,7 +12,7 @@
 <link rel="apple-touch-icon" href="icon-180.png">
 <title>LHビューア</title>
 <style>
-:root{
+:root{--fs:1;
   --bg:#141218; --panel:#1e1b24; --panel2:#27232f; --line:#3a3444; --text:#ece8f1; --muted:#a79fb3;
   --accent:#e2557a; --accent2:#f2a3b8; --ok:#7cc8a0;
 }
@@ -51,7 +51,7 @@ label.chk{display:flex;gap:8px;align-items:center;cursor:pointer}
 #screen{position:relative;aspect-ratio:1024/600;width:min(100vw,calc((100vh - 52px) * 1024 / 600));max-height:calc(100vh - 52px)}
 canvas{width:100%;height:100%;display:block;background:#000}
 #box{position:absolute;left:3%;right:3%;bottom:3%;min-height:24%;background:linear-gradient(180deg,rgba(20,14,26,.78),rgba(20,14,26,.9));
-  border:1px solid rgba(255,255,255,.14);border-radius:12px;padding:2.2% 3% 2.4%;font-size:clamp(13px,2.05vw,21px);line-height:1.65;
+  border:1px solid rgba(255,255,255,.14);border-radius:12px;padding:2.2% 3% 2.4%;font-size:calc(clamp(13px,2.05vw,21px) * var(--fs,1));line-height:1.65;
   text-shadow:0 1px 2px #000;white-space:pre-wrap;cursor:pointer;transition:opacity .2s}
 #box.off{opacity:0;pointer-events:none}
 #name{position:absolute;top:-1.4em;left:2.4%;background:var(--accent);color:#fff;font-size:.82em;padding:.1em .9em;border-radius:6px;font-weight:600}
@@ -91,10 +91,19 @@ html,body{-webkit-text-size-adjust:100%;touch-action:manipulation}
 @media (orientation: portrait){
   #stage{align-items:flex-start;padding-top:8px}
   #screen{width:100vw;max-height:none}
-  #box{top:calc(100% + 10px);bottom:auto;left:10px;right:10px;min-height:9em;font-size:16px;padding:16px 16px 18px}
+  #box{top:calc(100% + 10px);bottom:auto;left:10px;right:10px;min-height:9em;font-size:calc(16px * var(--fs,1));padding:16px 16px 18px}
   #name{top:-1.3em}
   #scenes{top:0}
 }
+#cfg{position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:16px}
+.cfgbox{background:var(--panel);border:1px solid var(--line);border-radius:14px;width:min(520px,100%);max-height:100%;overflow:auto;padding:16px 18px 18px}
+.cfghead{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;font-size:17px}
+.cfgbox h4{margin:14px 0 8px;font-size:13px;color:var(--accent2);font-weight:600;letter-spacing:.06em}
+.cfgbox .row{display:grid;grid-template-columns:7.5em 1fr 3.2em;align-items:center;gap:10px;margin:6px 0;font-size:14px}
+.cfgbox .row output{font-size:13px;color:var(--muted);text-align:right}
+.cfgbox input[type=range]{width:100%;accent-color:var(--accent)}
+.cfgbox label.chk{margin:8px 0;font-size:14px}
+.cfgsample{margin:14px 0 0;padding:12px 14px;background:rgba(20,14,26,.9);border-radius:10px;border:1px solid rgba(255,255,255,.14);min-height:3.4em;line-height:1.65}
 </style>
 </head>
 <body>
@@ -126,6 +135,7 @@ html,body{-webkit-text-size-adjust:100%;touch-action:manipulation}
   <div id="startRow">
     <button id="startBtn" class="primary" disabled>再生開始</button>
     <button id="resumeBtn" class="hidden"></button>
+    <button id="cfgBtn2">⚙ 設定</button>
   </div>
 </div>
 
@@ -146,13 +156,30 @@ html,body{-webkit-text-size-adjust:100%;touch-action:manipulation}
     <button id="bSkipScene" title="このシーンを飛ばす (S)">シーン送り ⏭</button>
     <button id="bList" title="シーン一覧 (L)">一覧</button>
     <button id="bFast" title="早送り (Ctrlを押している間も)">⏩ 早送り</button>
-    <button id="bVol" class="volbtn">音量</button>
+    <button id="bCfg" title="設定">⚙ 設定</button>
     <span id="prog"></span>
     <span class="sep"></span>
-    <label>待ち <input id="rSpeed" type="range" min="0" max="3000" step="100" value="700"></label>
-    <label>BGM <input id="rBgm" type="range" min="0" max="100" value="45"></label>
-    <label>効果音 <input id="rSe" type="range" min="0" max="100" value="70"></label>
-    <label>ボイス <input id="rVo" type="range" min="0" max="100" value="100"></label>
+  </div>
+</div>
+
+
+<div id="cfg" class="hidden">
+  <div class="cfgbox">
+    <div class="cfghead"><b>設定</b><button id="cfgClose">閉じる</button></div>
+    <h4>音量</h4>
+    <div class="row"><span>BGM</span><input id="rBgm" type="range" min="0" max="100" value="45"><output></output></div>
+    <div class="row"><span>効果音</span><input id="rSe" type="range" min="0" max="100" value="70"><output></output></div>
+    <div class="row"><span>ボイス</span><input id="rVo" type="range" min="0" max="100" value="100"><output></output></div>
+    <h4>テキスト</h4>
+    <div class="row"><span>文字の速さ</span><input id="rText" type="range" min="1" max="10" value="7"><output></output></div>
+    <div class="row"><span>オートの速さ</span><input id="rAuto" type="range" min="1" max="10" value="5"><output></output></div>
+    <div class="row"><span>文字の大きさ</span><input id="rFont" type="range" min="1" max="5" value="3"><output></output></div>
+    <div class="row"><span>窓の濃さ</span><input id="rWin" type="range" min="0" max="100" value="85"><output></output></div>
+    <h4>動作</h4>
+    <label class="chk"><input type="checkbox" id="cWaitVoice" checked> オート中はボイスの最後まで待つ</label>
+    <label class="chk"><input type="checkbox" id="cStopVoice" checked> 次の文に進んだらボイスを止める</label>
+    <label class="chk"><input type="checkbox" id="cTag" checked> 左上にシーン名を表示する</label>
+    <p class="cfgsample" id="cfgSample">文字の速さ・大きさの見本です。この文章で確認できます。</p>
   </div>
 </div>
 
@@ -887,7 +914,6 @@ async function audioUrl(resName){
   if (urlCache.size > 120){ const k = urlCache.keys().next().value; const old = urlCache.get(k); urlCache.delete(k); old.then(u=>u&&setTimeout(()=>URL.revokeObjectURL(u),60000)); }
   return p;
 }
-const vol = { bgm:()=>$('rBgm').value/100, se:()=>$('rSe').value/100, vo:()=>$('rVo').value/100 };
 const bgmEl = new Audio(); bgmEl.loop = true; let bgmName = null;
 async function setBgm(name){
   if (name === bgmName) return; bgmName = name;
@@ -905,12 +931,41 @@ async function playSe(ch, name){
   el.loop = ch <= 3 || /ループ|^bgf_/.test(name); el.src = u; el.volume = vol.se(); el.play().catch(()=>{});
 }
 const voEl = new Audio();
-$('rBgm').oninput = () => { bgmEl.volume = vol.bgm(); store.set('vol', volState()); };
-$('rSe').oninput = () => { for (const k in seCh) seCh[k].volume = vol.se(); store.set('vol', volState()); };
-$('rVo').oninput = () => { voEl.volume = vol.vo(); store.set('vol', volState()); };
-$('rSpeed').oninput = () => store.set('vol', volState());
-function volState(){ return { b:$('rBgm').value, s:$('rSe').value, v:$('rVo').value, w:$('rSpeed').value }; }
-(function(){ const v = store.get('vol'); if (v){ $('rBgm').value=v.b; $('rSe').value=v.s; $('rVo').value=v.v; $('rSpeed').value=v.w; } })();
+// ---------------------------------------------------------------- settings
+const CFG_DEF = { bgm:45, se:70, vo:100, text:7, auto:5, font:3, win:85, waitVoice:true, stopVoice:true, tag:true };
+const cfg = Object.assign({}, CFG_DEF, store.get('cfg') || {});
+const vol = { bgm:()=>cfg.bgm/100, se:()=>cfg.se/100, vo:()=>cfg.vo/100 };
+const TEXT_MS = [0, 90, 70, 55, 42, 32, 24, 17, 11, 6, 0]; // index = 文字の速さ (10 = 瞬間)
+const FONT = [0, .78, .9, 1, 1.15, 1.32];
+function charDelay(){ return TEXT_MS[cfg.text]; }
+function autoExtra(){ return [0, 3000, 2400, 1900, 1500, 1100, 800, 550, 350, 180, 50][cfg.auto]; }
+function autoPerChar(){ return [0, 140, 120, 100, 85, 72, 62, 52, 42, 32, 22][cfg.auto]; }
+const fmt = { bgm:v=>v, se:v=>v, vo:v=>v, text:v=>v==10?'瞬間':v, auto:v=>v, font:v=>['','特小','小','中','大','特大'][v], win:v=>v+'%' };
+const binds = { rBgm:'bgm', rSe:'se', rVo:'vo', rText:'text', rAuto:'auto', rFont:'font', rWin:'win' };
+function applyCfg(){
+  bgmEl.volume = vol.bgm(); for (const k in seCh) seCh[k].volume = vol.se(); voEl.volume = vol.vo();
+  document.documentElement.style.setProperty('--fs', FONT[cfg.font]);
+  $('box').style.background = 'rgba(20,14,26,' + (cfg.win/100) + ')';
+  $('sceneTag').style.display = cfg.tag ? '' : 'none';
+  for (const id in binds){ const el = $(id); el.value = cfg[binds[id]]; el.nextElementSibling.textContent = fmt[binds[id]](cfg[binds[id]]); }
+  $('cWaitVoice').checked = cfg.waitVoice; $('cStopVoice').checked = cfg.stopVoice; $('cTag').checked = cfg.tag;
+  store.set('cfg', cfg);
+}
+for (const id in binds) $(id).addEventListener('input', e => { cfg[binds[id]] = +e.target.value; applyCfg(); if (id === 'rText' || id === 'rFont') sample(); });
+$('cWaitVoice').onchange = e => { cfg.waitVoice = e.target.checked; applyCfg(); };
+$('cStopVoice').onchange = e => { cfg.stopVoice = e.target.checked; applyCfg(); };
+$('cTag').onchange = e => { cfg.tag = e.target.checked; applyCfg(); };
+let sampleTimer = null;
+function sample(){
+  const el = $('cfgSample'); const t = '文字の速さ・大きさの見本です。この文章で確認できます。';
+  el.style.fontSize = (16 * FONT[cfg.font]) + 'px'; clearInterval(sampleTimer);
+  const d = charDelay(); if (!d){ el.textContent = t; return; }
+  let i = 0; el.textContent = ''; sampleTimer = setInterval(() => { el.textContent = t.slice(0, ++i); if (i >= t.length) clearInterval(sampleTimer); }, d);
+}
+function openCfg(){ $('cfg').classList.remove('hidden'); sample(); }
+$('bCfg').onclick = openCfg; $('cfgBtn2').onclick = openCfg;
+$('cfgClose').onclick = () => $('cfg').classList.add('hidden');
+$('cfg').addEventListener('click', e => { if (e.target.id === 'cfg') $('cfg').classList.add('hidden'); });
 function stopAudio(){ bgmEl.pause(); bgmName = null; for (const k in seCh) seCh[k].pause(); voEl.pause(); }
 
 // ---------------------------------------------------------------- playback
@@ -931,8 +986,8 @@ function makeHost(tk){ const alive = () => tk === curToken; return {
     if (!alive()) return;
     $('box').classList.remove('off');
     $('name').textContent = m.speaker || '';
-    $('text').textContent = m.text.replace(/[\uE000-\uF8FF]/g, '太壱');
-    if (play.fast){ await new Promise(r=>setTimeout(r, 25)); return; }
+    const full = m.text.replace(/[-]/g, '太壱');
+    if (play.fast){ $('text').textContent = full; await new Promise(r=>setTimeout(r, 25)); return; }
     let voiceDone = Promise.resolve();
     voEl.pause();
     if (m.voice){
@@ -943,19 +998,25 @@ function makeHost(tk){ const alive = () => tk === curToken; return {
         voiceDone.then(()=>{ play.voicePlaying = false; });
       }
     }
-    const extra = +$('rSpeed').value;
+    // typewriter: a tap while typing shows the whole line
+    const d = charDelay();
+    if (d){
+      let skip = false; play.advance = () => { skip = true; };
+      for (let i = 1; i <= full.length && !skip && alive() && !play.fast; i++){ $('text').textContent = full.slice(0, i); await new Promise(r=>setTimeout(r, d)); }
+      play.advance = null;
+    }
+    $('text').textContent = full;
+    if (!alive()) return;
     if (play.auto){
-      // wait for the voice (or reading time) unless the user clicks
-      const reading = Math.max(1100, m.text.length * 75);
       const adv = waitAdvance(null);
-      const timer = m.voice ? voiceDone.then(()=>new Promise(r=>setTimeout(r, extra))) : new Promise(r=>setTimeout(r, reading + extra));
+      const reading = new Promise(r=>setTimeout(r, Math.max(900, full.length * autoPerChar()) + autoExtra()));
+      const timer = m.voice && cfg.waitVoice ? Promise.all([voiceDone.then(()=>new Promise(r=>setTimeout(r, autoExtra()))), new Promise(r=>setTimeout(r, 600))]) : reading;
       await Promise.race([adv, timer.then(()=>{ if (play.advance) play.advance(); })]);
-      // switching auto off mid-line waits for a click
       if (!play.auto && alive()) await waitAdvance(null);
     } else {
       await waitAdvance(null);
     }
-    if (m.voice && voEl.currentTime > 0 && !voEl.ended) voEl.pause();
+    if (m.voice && cfg.stopVoice && voEl.currentTime > 0 && !voEl.ended) voEl.pause();
   },
   bgm(n){ if (alive()) setBgm(n); },
   se(ch, n){ if (alive()) playSe(ch, n); },
@@ -1014,7 +1075,6 @@ $('box').onclick = () => { if (play.advance) play.advance(); };
 $('cv').onclick = () => { if (play.advance) play.advance(); };
 $('bSkipScene').onclick = () => { if (play.runner){ play.runner.abortStep = true; voEl.pause(); for (const k in seCh) seCh[k].pause(); if (play.advance) play.advance(); } };
 $('bFast').onclick = () => { play.fast = !play.fast; $('bFast').classList.toggle('on', play.fast); if (play.fast){ voEl.pause(); if (play.advance) play.advance(); } };
-$('bVol').onclick = () => $('bar').classList.toggle('showvol');
 $('bList').onclick = () => { const s=$('scenes'); s.classList.toggle('hidden'); if (!s.classList.contains('hidden')) renderSceneList(); };
 document.addEventListener('keydown', e => {
   if ($('player').classList.contains('hidden')) return;
@@ -1026,6 +1086,7 @@ document.addEventListener('keydown', e => {
   else if (e.key === 'Control' && !play.fast){ play.fast = true; voEl.pause(); if (play.advance) play.advance(); }
 });
 document.addEventListener('keyup', e => { if (e.key === 'Control'){ play.fast = false; $('bFast').classList.remove('on'); } });
+applyCfg();
 if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(()=>{});
 </script>
 </body>
