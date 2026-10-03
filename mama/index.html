@@ -48,7 +48,7 @@ label.chk{display:flex;gap:8px;align-items:center;cursor:pointer}
 
 /* ---------- player */
 #player{position:fixed;inset:0;display:flex;flex-direction:column;background:#000}
-#stage{position:relative;flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden}
+#stage{position:relative;flex:1;cursor:pointer;-webkit-tap-highlight-color:transparent;display:flex;align-items:center;justify-content:center;overflow:hidden}
 #screen{position:relative;aspect-ratio:var(--arw,1024)/var(--arh,600);width:min(100vw,calc((100vh - 52px) * var(--arw,1024) / var(--arh,600)));max-height:calc(100vh - 52px)}
 canvas{width:100%;height:100%;display:block;background:#000}
 #box{position:absolute;left:3%;right:3%;bottom:3%;min-height:24%;background:linear-gradient(180deg,rgba(20,14,26,.78),rgba(20,14,26,.9));
@@ -105,7 +105,7 @@ html,body{-webkit-text-size-adjust:100%;touch-action:manipulation}
 .cfgbox input[type=range]{width:100%;accent-color:var(--accent)}
 .cfgbox label.chk{margin:8px 0;font-size:14px}
 .cfgsample{margin:14px 0 0;padding:12px 14px;background:rgba(20,14,26,.9);border-radius:10px;border:1px solid rgba(255,255,255,.14);min-height:3.4em;line-height:1.65}
-.backlink{display:inline-block;margin:0 0 14px;color:var(--muted);text-decoration:none;font-size:14px}
+.backlink{display:inline-block;margin:0 0 16px;padding:10px 16px;border:1px solid var(--line);border-radius:10px;background:var(--panel2);color:var(--text);text-decoration:none;font-size:15px}
 #gameTabs{display:flex;gap:8px;margin:0 0 16px}
 #gameTabs button{flex:1;padding:12px;font-size:16px;font-weight:600}
 #gameTabs button.on{background:var(--accent);border-color:var(--accent);color:#fff}
@@ -114,10 +114,10 @@ html,body{-webkit-text-size-adjust:100%;touch-action:manipulation}
 <body>
 
 <div id="setup">
+  <a class="backlink" href="../">← 作品選択へ戻る</a>
   <h1>MLビューア <small>選択肢なしでルートを流し見</small></h1>
   <p class="lead">データは一度読み込めば、この端末の中に保存されてオフラインで再生できます。どこにも送信しません。</p>
 
-  <a class="backlink" href="../">← 作品選択へ戻る</a>
   <div id="gameTabs"></div>
   <div class="card">
     <h2>1. データ</h2>
@@ -153,7 +153,7 @@ html,body{-webkit-text-size-adjust:100%;touch-action:manipulation}
       <canvas id="cv" width="1024" height="600"></canvas>
       <div id="sceneTag"></div>
       <div id="box" class="off"><div id="name"></div><div id="text"></div></div>
-      <div id="endCard" class="hidden"><div id="endText">おわり</div><button id="endBack" class="primary">ルート選択に戻る</button></div>
+      <div id="endCard" class="hidden"><div id="endText">おわり</div><div class="btnrow"><button id="endBack" class="primary">ルート選択に戻る</button><button id="endHub">作品選択へ</button></div></div>
     </div>
     <div id="scenes" class="hidden"><h3>シーン一覧（クリックで移動）</h3><ol id="sceneList"></ol></div>
   </div>
@@ -598,7 +598,7 @@ class Runner {
           const i = u32(p, 0); const text = this.g.msg.text[i] || ''; const vo = this.g.msg.voice[i] || '';
           const si = this.g.msg.speaker ? this.g.msg.speaker[i] : -1;
           let speaker = si >= 0 ? (this.g.msg.names[si] || '') : '';
-          if (si === 2 || /[\uE000-\uF8FF]/.test(speaker)) speaker = '太壱';
+          speaker = speaker.replace(/[\uE000-\uF8FF]/g, '太壱');   // gaiji = protagonist's name
           if (!speaker && vo) { const m = /^[a-z]+/.exec(vo); speaker = m && SPEAKERS[m[0]] || ''; }
           await this.h.message({ text, voice: vo ? vo : null, speaker, scene: name });
           break;
@@ -1300,8 +1300,8 @@ function backToMenu(){ stopRun(); play.fast = false; $('bFast').classList.remove
 $('bMenu').onclick = backToMenu; $('endBack').onclick = backToMenu;
 $('bAuto').onclick = () => setAuto(!play.auto);
 $('bNext').onclick = () => { if (play.advance) play.advance(); };
-$('box').onclick = () => { if (play.advance) play.advance(); };
-$('cv').onclick = () => { if (play.advance) play.advance(); };
+$('stage').onclick = e => { if (e.target.closest('#scenes,#endCard')) return; if (play.advance) play.advance(); };
+$('endHub').onclick = () => { location.href = '../'; };
 $('bSkipScene').onclick = () => { if (play.runner){ play.runner.abortStep = true; voEl.pause(); for (const k in seCh) seCh[k].pause(); if (play.advance) play.advance(); } };
 $('bFast').onclick = () => { play.fast = !play.fast; $('bFast').classList.toggle('on', play.fast); if (play.fast){ voEl.pause(); if (play.advance) play.advance(); } };
 $('bList').onclick = () => { const s=$('scenes'); s.classList.toggle('hidden'); if (!s.classList.contains('hidden')) renderSceneList(); };
