@@ -498,19 +498,24 @@ class Runner {
     this.route = null; this.stop = false;
   }
   setVars(o) { for (const k in o) this.v[+k] = o[k]; }
+  cond([k, op, n]) { const a = this.v[k]; return op === '<' ? a < n : op === '>=' ? a >= n : op === '==' ? a === n : op === '!=' ? a !== n : true; }
   async runSteps(steps, onStep, startAt) {
     startAt = startAt || 0;
     for (let i = 0; i < steps.length && !this.stop; i++) {
       const st = steps[i];
+      if (st.when && !this.cond(st.when)) continue;   // conditional scene (e.g. extra "loop" scene when affection is short)
       if (st.set) this.setVars(st.set);
       this.route = st;
       if (i < startAt) { // fast-forward silently to rebuild variables
-        const h = this.h; this.h = SILENT; await this.call(st.s, 0); this.h = h; continue;
+        const h = this.h; this.h = SILENT; await this.call(st.s, 0); this.h = h;
+        if (st.post) this.setVars(st.post);
+        continue;
       }
       onStep && onStep(i, st);
       this.abortStep = false;
       await this.call(st.s, 0);
       this.abortStep = false;
+      if (st.post) this.setVars(st.post);
     }
   }
   async call(name, depth) {
@@ -698,14 +703,18 @@ const COMMON = ['A0000', 'A0010', 'A0020', 'A0030', 'A0040', 'A0050', 'A0060', '
 // main heroine chain. P = letter (C/D/E), pv = progress var, ver: 0/1
 // stage values are what the game's route script holds when calling each scene
 function mainChain(P, pv, ver) {
+  // loop scenes (x0030/x0130/x0230/x0530) are played by the game when the affection (aff var) is still under the
+  // threshold after the command scene; one pass of the scene is shown, then the threshold counts as met.
+  const AFF = { C: 43, E: 44, D: 45 }[P];
   const st = [
-    ['0000', 0], ['0010', 10], ['0020', 20], ['0040', 40], ['0050', 40],
-    ['0100', 100], ['0110', 110], ['0120', 120], ['0140', 140], ['0150', 140],
-    ['0200', 200], ['0210', 210], ['0220', 220], ['0240', 240], ['0250', 240], ['0260', 260],
+    ['0000', 0], ['0010', 10], ['0020', 20], ['0030', 30, 25], ['0040', 40], ['0050', 40],
+    ['0100', 100], ['0110', 110], ['0120', 120], ['0130', 130, 50], ['0140', 140], ['0150', 140],
+    ['0200', 200], ['0210', 210], ['0220', 220], ['0230', 230, 75], ['0240', 240], ['0250', 240], ['0260', 260],
     ver === 0 ? ['0300', 300] : ['0400', 400],
-    ['0500', 500], ['0510', 510], ['0520', 520], ['0540', 540], ['0550', 540], ['0560', 560],
+    ['0500', 500], ['0510', 510], ['0520', 520], ['0530', 530, 100], ['0540', 540], ['0550', 540], ['0560', 560],
   ];
-  return st.map(([n, s]) => ({ s: P + n, set: { [pv]: s }, ver }));
+  return st.map(([n, s, thr]) => thr ? { s: P + n, set: { [pv]: s }, ver, when: [AFF, '<', thr], post: { [AFF]: thr } }
+                                    : { s: P + n, set: { [pv]: s }, ver });
 }
 const PERSONAL = { C: '個人ルート（Ｃ　紅音）.scr', D: '個人ルート（Ｄ　鈴鹿）.scr', E: '個人ルート（Ｅ　セイラ）.scr',
   F: '個人ルート（Ｆ　舞凍）.scr', G: '個人ルート（Ｇ　アヴリル）.scr', H: '個人ルート（Ｈ　桔梗）.scr' };
@@ -721,6 +730,7 @@ function main(P, ver, items) {
 }
 
 const ROUTES = [
+  { id: 'intro', desc: 'オープニング〜共通ルートのみ', group: '導入', name: '導入だけ見る', commonOnly: true, steps: () => [] },
   { id: 'akane1', desc: '吸血鬼版で統一', group: 'メインヒロイン', name: '紅音 吸血鬼END', steps: () => main('C', 0, { 63: 1 }) },
   { id: 'akane2', desc: '雪女版で統一', group: 'メインヒロイン', name: '紅音 雪女END', steps: () => main('C', 1, { 64: 1 }) },
   { id: 'suzuka1', desc: '悪鬼版で統一', group: 'メインヒロイン', name: '鈴鹿 悪鬼END', steps: () => main('D', 0, { 57: 1 }) },
@@ -730,18 +740,21 @@ const ROUTES = [
   { id: 'seira3', desc: '聖竜版・アイテムあり', group: 'メインヒロイン', name: 'セイラ 聖竜END3', steps: () => main('E', 1, { 62: 1 }) },
   { id: 'mai', desc: '舞凍のイベントのみ', group: 'サブキャラ', name: '舞凍END', steps: () => [
       { s: 'F0000', set: { 50: 55, 68: 0 } }, { s: 'F0010', set: { 68: 10 } }, { s: 'F0020', set: { 68: 20 } },
-      { s: 'F0030', set: { 68: 30 } }, { s: 'F0040', set: { 68: 40 } }, { s: PERSONAL.F, set: { 68: 1000, 46: 100 } }] },
+      { s: 'F0030', set: { 68: 30 } }, { s: 'F0040', set: { 68: 40 } }, { s: 'F0050', set: { 68: 50 }, when: [46, '<', 100], post: { 46: 100 } },
+      { s: PERSONAL.F, set: { 68: 1000, 46: 100 } }] },
   { id: 'kikyou', desc: '桔梗のイベントのみ', group: 'サブキャラ', name: '桔梗END', steps: () => [
       { s: 'H0000', set: { 49: 55, 69: 0 } }, { s: 'H0010', set: { 69: 10 } }, { s: 'H0020', set: { 69: 20 } },
       { s: 'H0030', set: { 69: 30 } }, { s: 'H0040', set: { 69: 40 } }, { s: PERSONAL.H, set: { 69: 1000, 60: 1 } }] },
   { id: 'avril', desc: 'アヴリルのイベントのみ', group: 'サブキャラ', name: 'アヴリルEND', steps: () => [
       { s: 'G0000', set: { 70: 0, 57: 1, 58: 1, 59: 1, 60: 1, 61: 1, 62: 1, 63: 1, 64: 1 } },
-      { s: 'G0100', set: { 70: 100 } }, { s: 'G0200', set: { 70: 200 } }, { s: 'G0300', set: { 70: 300 } },
+      { s: 'G0100', set: { 70: 100 } }, { s: 'G0110', set: { 70: 110 } }, { s: 'G0200', set: { 70: 200 } }, { s: 'G0210', set: { 70: 210 } },
+      { s: 'G0300', set: { 70: 300 } }, { s: 'G0310', set: { 70: 310 } },
       { s: 'G0400', set: { 70: 400 } }, { s: PERSONAL.G, set: { 70: 1000 } }] },
   { id: 'oyako', desc: '紅音（雪女）→舞凍→母娘', group: 'その他', name: '母娘END（舞凍・紅音）', steps: () => [
       ...mainChain('C', 65, 1),
       { s: 'F0000', set: { 65: 1000, 68: 0 } }, { s: 'F0010', set: { 68: 10 } }, { s: 'F0020', set: { 68: 20 } },
       { s: 'F0030', set: { 68: 30 } }, { s: 'F0040', set: { 68: 40 } },
+      { s: 'F0050', set: { 68: 50 }, when: [46, '<', 100], post: { 46: 100 } },
       { s: '舞凍・紅音　母娘ルート.scr', set: { 68: 1000, 46: 100, 71: 0 } }] },
   { id: 'gragri', desc: 'このイベントのみ', group: 'その他', name: 'グラァネ・グリモ', steps: () => [
       { s: 'B1000', set: { 65: 1000, 49: 0, 50: 100, 46: 100, 72: 0 } }] },
@@ -771,6 +784,7 @@ function mSub(P, end) { // 茜 (F, unlocked in 舞凍's C0030) / ミーメ (G, u
   return [{ s: intro, pref: { [flag]: 1 } }, ...mChain(P, pref, 10), { s: M_PERSONAL[P], set: { [pv]: end === 1 ? 1000 : 3000 }, pref }];
 }
 const M_ROUTES = [
+  { id: 'm_intro', group: '導入', name: '導入だけ見る', desc: 'オープニング〜共通ルートのみ', commonOnly: true, steps: () => [] },
   { id: 'm_mai1', group: 'メインヒロイン', name: '舞凍 END1', desc: '好感度◎・欲望控えめ', steps: () => mMain('C', 1) },
   { id: 'm_mai2', group: 'メインヒロイン', name: '舞凍 END2', desc: '好感度◎・欲望◎', steps: () => mMain('C', 2) },
   { id: 'm_mai3', group: 'メインヒロイン', name: '舞凍 END3', desc: '好感度低め', steps: () => mMain('C', 3) },
@@ -798,7 +812,7 @@ function expand(route, includeCommon, fileNames, game) {
   const full = code => fileNames.find(n => n === code || n.startsWith(code + '　')) || code;
   const steps = [];
   const common = (game && GAMES[game] ? GAMES[game].common : COMMON);
-  if (includeCommon) for (const c of common) steps.push({ s: c, common: true });
+  if (includeCommon || route.commonOnly) for (const c of common) steps.push({ s: c, common: true });
   steps.push(...route.steps());
   return steps.map(st => Object.assign({}, st, { s: full(st.s) }));
 }
@@ -1110,7 +1124,7 @@ function makeHost(tk){ const alive = () => tk === curToken; const seek = play.se
       setBgm(seek.bgm);
       for (const ch in seek.loops) if (seek.loops[ch]) playSe(+ch, seek.loops[ch]);
     }
-    store.set('prog:' + play.route.id, { common: play.common, step: play.step, line: lineNo, at: Date.now() });
+    store.set('prog:' + play.route.id, { common: play.common, step: play.step, sn: play.sname, line: lineNo, at: Date.now() });
     store.set(lastKey(), play.route.id);
     $('box').classList.remove('off');
     $('name').textContent = m.speaker || '';
@@ -1184,13 +1198,14 @@ async function startRoute(route, includeCommon, startAt, startLine){
   ctx.fillStyle='#000'; ctx.fillRect(0,0,cv.width,cv.height); shown = null; $('box').classList.add('off');
   play.route = route; play.common = includeCommon;
   play.steps = RT.expand(route, includeCommon, game.fileNames, curGame);
+  { const pr = progOf(route.id); if (startAt > 0 && pr && pr.sn && (!play.steps[startAt] || play.steps[startAt].s !== pr.sn)){ const k = play.steps.findIndex(x => x.s === pr.sn); if (k >= 0) startAt = k; } } // keep resume position valid when the scene list changed
   const runner = new E.Runner(game, makeHost(token)); play.runner = runner;
   try{
     await runner.runSteps(play.steps, (i, st) => {
       play.line = 0;
-      play.step = i; setTag(st.s);
+      play.step = i; play.sname = st.s; setTag(st.s);
       $('prog').textContent = route.name + '　' + (i+1) + ' / ' + play.steps.length;
-      if (!play.seekState.on) store.set('prog:' + route.id, { common: includeCommon, step: i, line: 0, at: Date.now() });
+      if (!play.seekState.on) store.set('prog:' + route.id, { common: includeCommon, step: i, sn: st.s, line: 0, at: Date.now() });
       store.set(lastKey(), route.id);
       if (!$('scenes').classList.contains('hidden')) renderSceneList();
     }, startAt);
