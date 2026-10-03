@@ -21,12 +21,14 @@ a.card:active{opacity:.7}
 .ok{color:#7ed99b}
 </style></head><body><main>
 <h1>流し見ビューア</h1><p>作品を選んでください。</p>
-<a class="card" href="love/"><div class="ic" style="background:#e2557a">LH</div><div><div class="t">Love×Holic</div><div class="s" id="s-love">13ルート</div></div></a>
-<a class="card" href="mama/"><div class="ic" style="background:#7a60e2">ML</div><div><div class="t">Mama×Holic</div><div class="s" id="s-mama">14ルート</div></div></a>
+<a class="card" href="love/"><div class="ic" style="background:#e2557a">LH</div><div><div class="t">Love×Holic</div><div class="s" id="s-love">&nbsp;</div></div></a>
+<a class="card" href="mama/"><div class="ic" style="background:#7a60e2">ML</div><div><div class="t">Mama×Holic</div><div class="s" id="s-mama">&nbsp;</div></div></a>
+<a class="card" href="pure/"><div class="ic" style="background:#2fa37a">PH</div><div><div class="t">Pure×Holic</div><div class="s" id="s-pure">&nbsp;</div></div></a>
 </main>
 <script>
-(async()=>{try{const dbs=await indexedDB.databases();const names=dbs.map(d=>d.name);
- if(names.includes('lhviewer'))document.getElementById('s-love').innerHTML='13ルート ・ <span class="ok">データ読み込み済み</span>';
- if(names.includes('lhviewer-mama'))document.getElementById('s-mama').innerHTML='14ルート ・ <span class="ok">データ読み込み済み</span>';}catch(e){}})();
+(async()=>{try{const names=(await indexedDB.databases()).map(d=>d.name);
+ for(const [id,db] of [['love','lhviewer'],['mama','lhviewer-mama'],['pure','lhviewer-pure']]){
+  const el=document.getElementById('s-'+id); el.innerHTML=names.includes(db)?'<span class="ok">データ読み込み済み</span>':'データ未読み込み';}
+}catch(e){}})();
 if('serviceWorker' in navigator && location.protocol==='https:')navigator.serviceWorker.register('sw.js').catch(()=>{});
 </script></body></html>

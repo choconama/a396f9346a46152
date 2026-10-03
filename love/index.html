@@ -265,6 +265,12 @@ function findUtf16(buf, s, from) {
   return -1;
 }
 
+// Newer titles name resources "arc:\\file.ext"; the rest of the code uses "file.arc" (extension replaced by the archive name).
+function normRes(s) {
+  if (!s) return s;
+  const m = /^([A-Za-z0-9_]+):\\(.+)$/.exec(s); if (!m) return s;
+  const dot = m[2].lastIndexOf('.'); return (dot > 0 ? m[2].slice(0, dot) : m[2]) + '.' + m[1];
+}
 function parseParams(b) {
   // resource table: [u32 count][u16 ?] then entries [u8 flag][u16 len][utf16], flag1 -> [u32 n] n strings then a string
   const at = findUtf16(b, '.scr', 0);
@@ -280,8 +286,8 @@ function parseParams(b) {
   const rs = () => { const n = u16(b, p); const s = utf16.decode(b.subarray(p + 2, p + 2 + n)); p += 2 + n; return s; };
   for (let i = 1; i < count; i++) {
     const flag = b[p++];
-    if (flag === 0) res.push(rs());
-    else if (flag === 1) { const n = u32(b, p); p += 4; for (let k = 0; k < n; k++) rs(); res.push(rs()); }
+    if (flag === 0) res.push(normRes(rs()));
+    else if (flag === 1) { const n = u32(b, p); p += 4; for (let k = 0; k < n; k++) rs(); res.push(normRes(rs())); }
     else throw new Error('params.dat: bad flag ' + flag + ' at ' + p);
   }
   // image table
@@ -318,7 +324,7 @@ function parseMessages(b) {
     const L = u32(b, p); const r = not(p + 4, L); p += 4 + L;
     const tl = u32(r, 0);
     rtext[i] = sjis.decode(r.subarray(4, 4 + tl)).replace(/\n$/, '');
-    rvoice[i] = r[4 + tl] ? utf16.decode(r.subarray(5 + tl)).replace(/\0+$/, '') : '';
+    rvoice[i] = r[4 + tl] ? normRes(utf16.decode(r.subarray(5 + tl)).replace(/\0+$/, '')) : '';
   }
   // message id -> [speaker name index, record list]
   const ne = u32(b, p); p += 4;
@@ -426,7 +432,8 @@ async function loadGame(files, progress, cache) {
   progress && progress('scr.arc');
   const scrArc = await openArc(need('scr.arc'));
   const arcs = { scr: scrArc };
-  const arcNames = ['bgd', 'bgm', 'sed', 'sp00', 'sp01', 'cg00', 'cg01', 'cg02', 'cg03', 'cg04', 'cg05', 'voice00', 'voice01', 'voice02'];
+  const arcNames = ['bgd', 'bgm', 'sed', 'sp00', 'sp01', 'cg00', 'cg01', 'cg02', 'cg03', 'cg04', 'cg05', 'voice00', 'voice01', 'voice02']
+    .concat(['cg06', 'cg07', 'cg08', 'sp02', 'sp03'].filter(a => files.has(a + '.arc')));
   let done = 0;
   progress && progress('アーカイブ (0/' + arcNames.length + ')');
   await Promise.all(arcNames.map(async a => {
@@ -505,7 +512,7 @@ class Runner {
       const st = steps[i];
       if (st.when && !this.cond(st.when)) continue;   // conditional scene (e.g. extra "loop" scene when affection is short)
       if (st.set) this.setVars(st.set);
-      this.route = st;
+      this.route = st; this.vi = 0; this.curPref = null;
       if (i < startAt) { // fast-forward silently to rebuild variables
         const h = this.h; this.h = SILENT; await this.call(st.s, 0); this.h = h;
         if (st.post) this.setVars(st.post);
@@ -518,7 +525,32 @@ class Runner {
       if (st.post) this.setVars(st.post);
     }
   }
+  // Run the game's own dispatcher script once (silently) and turn it into a plain list of scene steps:
+  // each scene the dispatcher called becomes a step that carries the variable changes made by the dispatcher in between.
+  static async flatten(game, steps) {
+    const r = new Runner(game, SILENT); r.recorder = []; const out = [];
+    for (const st of steps) {
+      if (!st.dispatch) { out.push(st); await r.runSteps([st]); continue; }
+      let last = r.v.slice(); r.recorder.length = 0;
+      await r.runSteps([st]);
+      for (const rec of r.recorder) {
+        const set = {}; for (let k = 0; k < rec.before.length; k++) if (rec.before[k] !== last[k]) set[k] = rec.before[k];
+        const f = { s: rec.s, set };
+        if (rec.pref) f.pref = rec.pref; if (st.pick) f.pick = st.pick; if (st.ver != null) f.ver = st.ver;
+        out.push(f); last = rec.after;
+      }
+    }
+    return out;
+  }
   async call(name, depth) {
+    if (depth > 0 && this.route && this.route.skip && this.route.skip.some(k => name.startsWith(k))) return; // scenes the route says to leave out
+    if (depth === 1 && this.recorder && this.route && this.route.dispatch) {
+      const rec = { s: name, before: this.v.slice(), pref: this.curPref || this.route.pref || null }; this.recorder.push(rec);
+      await this._call(name, depth); rec.after = this.v.slice(); return;
+    }
+    return this._call(name, depth);
+  }
+  async _call(name, depth) {
     const sc = await this.g.script(name);
     const v = this.v; const R = this.g.params.res;
     let pc = 0, flag = false;
@@ -549,7 +581,13 @@ class Runner {
         case 0x0e: if (v[u16(p, 1)]) pc = this.jump(sc, u32(p, 3)); break;
         case 0x0b: pc = this.jump(sc, u32(p, 0)); break;
         case 0x1a: if (depth < 8) { this.h.call && this.h.call(R[u32(p, 1)]); await this.call(R[u32(p, 1)], depth + 1); } break;
-        case 0x0c: return;            // jump to system script: end of this scene
+        case 0x0c: {                  // jump to system script: end of this scene
+          if (this.route && this.route.dispatch) { // dispatcher mode: follow the jump into a personal / final route, then finish
+            const t = R[u32(p, 1)];
+            if (/^(個人ルート|ハーレムルート)/.test(t)) { await this.call(t, depth + 1); this.abortStep = true; }
+          }
+          return;
+        }
         case 0x04: return;
         case 0x06: {
           const n = u32(p, 0); const tt = p.length > 8 ? p[8] : 0;
@@ -570,12 +608,19 @@ class Runner {
         case 0x05: { const n = u16(p, 1); if (n && n < 0x8000) await this.h.wait(Math.min(n * 50, 2000)); break; }
         case 0x14: {
           const c = p[1];
-          if (c === 0x0e) v[12] = this.route && this.route.ver != null ? this.route.ver : 0; // H-scene version select
+          if (c === 0x02 && this.route && this.route.visits) {                           // dispatcher: "where to go" -> next scripted visit
+            const vis = this.route.visits;
+            if (this.vi >= vis.length) { this.abortStep = true; }
+            else { const e = vis[this.vi++]; v[12] = typeof e === 'number' ? e : e.v; this.curPref = typeof e === 'number' ? null : (e.pref || null); }
+          }
+          else if (c === 0x0e) v[12] = this.route && this.route.ver != null ? this.route.ver : 0; // H-scene version select
           else if (c === 0x13) v[0] = plan.next();                                         // in-scene menu
           break;
         }
         case 0x08: {                                                                      // explicit choice
-          const pref = this.route && this.route.pref; const dl = pref && sc.deltas.get(x.pos);
+          const pk = this.route && this.route.pick; const pkv = pk && pk[name.slice(0, 5)];
+          if (pkv != null) { v[0] = pkv; break; }
+          const pref = this.curPref || (this.route && this.route.pref); const dl = pref && sc.deltas.get(x.pos);
           if (dl) { // pick the option whose variable changes best match the route's preference (+1 maximise, -1 minimise)
             const score = d => Object.keys(d).reduce((t, k) => t + (pref[k] || 0) * d[k], 0);
             const s0 = score(dl[0]), s1 = score(dl[1]); v[0] = s1 > s0 ? 1 : 0;
@@ -803,9 +848,35 @@ const M_ROUTES = [
       return [...mChain('C', all, 15), ...mChain('D', all, 15), ...mChain('E', all, 15), { s: 'ハーレムルート.scr', set: { 57: 0 }, pref: all }]; } },
 ];
 
+
+// ================================================================ Pure×Holic
+// The game's own dispatcher (ルート処理.scr) is run as-is; the route only decides which map location (v12) is visited at each
+// "where to go" prompt. 0:ハトホル 1:アストライア 2:アルル 3:モルガン 4:舞凍 5:紅音 6:儀式(舞凍・紅音) 7:夜叉 8:鈴鹿 9:儀式(夜叉・鈴鹿)
+// 10:サリー 11:セイラ 12:儀式(サリー・セイラ) 13:ハーレム(TRUE)
+const P_COMMON = ['A0000', 'A0010', 'A0020', 'A0030', 'A0040', 'A0050', 'A0060', 'A0070', 'A0080', 'A0090', 'A0100', 'B0000'];
+const rep = (n, v, pref) => Array.from({ length: n }, () => pref ? { v, pref } : v);
+const P_G = [4, 4, 4, 5, 5, 5, 6], P_H = [7, 7, 7, 8, 8, 8, 9], P_I = [10, 10, 10, 11, 11, 11, 12];
+const pdisp = (visits, extra) => [Object.assign({ s: 'ルート処理.scr', dispatch: true, visits, skip: ['B0000'] }, extra || {})];
+const P_ROUTES = [
+  { id: 'p_intro', desc: 'オープニング〜共通イベントのみ', group: '導入', name: '導入だけ見る', commonOnly: true, steps: () => [] },
+  { id: 'p_hathor', group: 'メインヒロイン', name: 'ハトホル END', desc: '好感度◎で個人ルート', steps: () => pdisp(rep(12, 0, { 49: 1 })) },
+  { id: 'p_astraea', group: 'メインヒロイン', name: 'アストライア END', desc: '好感度◎で個人ルート', steps: () => pdisp(rep(12, 1, { 50: 1 })) },
+  { id: 'p_arle', group: 'メインヒロイン', name: 'アルル END', desc: '好感度◎で個人ルート', steps: () => pdisp(rep(12, 2, { 51: 1 })) },
+  { id: 'p_morgan1', group: 'メインヒロイン', name: 'モルガン END1', desc: '舞凍＆紅音・夜叉＆鈴鹿・サリー＆セイラの儀式→モルガン（孕ませる）',
+    steps: () => pdisp([3, ...P_G, 3, 3, ...P_H, 3, 3, ...P_I, 3, 3, 3], { pick: { F1090: 0 } }) },
+  { id: 'p_morgan2', group: 'メインヒロイン', name: 'モルガン END2', desc: '儀式3つ→モルガン（回避する）',
+    steps: () => pdisp([3, ...P_G, 3, 3, ...P_H, 3, 3, ...P_I, 3, 3, 3], { pick: { F1090: 1 } }) },
+  { id: 'p_maiakane', group: 'サブキャラ', name: '舞凍＆紅音', desc: '二人のイベント＋儀式', steps: () => pdisp(P_G) },
+  { id: 'p_yashasuzuka', group: 'サブキャラ', name: '夜叉＆鈴鹿', desc: '二人のイベント＋儀式', steps: () => pdisp(P_H) },
+  { id: 'p_sallyseira', group: 'サブキャラ', name: 'サリー＆セイラ', desc: '二人のイベント＋儀式', steps: () => pdisp(P_I) },
+  { id: 'p_true', group: 'その他', name: 'TRUE（ハーレム）END', desc: '儀式3つ→神断→3人のTRUEフラグ→TRUEルート',
+    steps: () => pdisp([3, ...P_G, 3, 3, ...P_H, 3, 3, ...P_I, 3, ...rep(12, 0, { 49: -1 }), ...rep(12, 1, { 50: -1 }), ...rep(12, 2, { 51: -1 }), 13], { set: { 89: 2 } }) },
+];
+
 const GAMES = {
   love: { id: 'love', name: 'Love×Holic', common: COMMON, routes: ROUTES },
   mama: { id: 'mama', name: 'Mama×Holic', common: M_COMMON, routes: M_ROUTES },
+  pure: { id: 'pure', name: 'Pure×Holic', common: P_COMMON, routes: P_ROUTES },
 };
 
 function expand(route, includeCommon, fileNames, game) {
@@ -830,7 +901,7 @@ const store = { get(k){ try{ return JSON.parse(localStorage.getItem('lhv:'+k)); 
 let game = null, selected = null;
 
 // ---------------------------------------------------------------- data storage (IndexedDB, parts kept as Blobs)
-const GAME_DEF = { love: { db: 'lhviewer', prefix: 'lh' }, mama: { db: 'lhviewer-mama', prefix: 'mh' } };
+const GAME_DEF = { love: { db: 'lhviewer', prefix: 'lh' }, mama: { db: 'lhviewer-mama', prefix: 'mh' }, pure: { db: 'lhviewer-pure', prefix: 'ph' } };
 const ONLY = 'love';
 let curGame = ONLY || 'love';
 const loaded = {};
@@ -891,7 +962,7 @@ async function openStored(){
 $('importBtn').onclick = () => $('partsInput').click();
 $('importBtn').addEventListener('click', () => setStatus('ファイルを選んでください。選んだあと、iPhoneがファイルを受け取るまで数分かかることがあります（画面はそのままで待ってください）。'));
 $('partsInput').onchange = async e => {
-  let files = [...e.target.files].filter(f => /^(lh|mh)\.pack\.\d+of\d+$/.test(f.name)).sort((a,b)=>a.name.localeCompare(b.name));
+  let files = [...e.target.files].filter(f => /^(lh|mh|ph)\.pack\.\d+of\d+$/.test(f.name)).sort((a,b)=>a.name.localeCompare(b.name));
   e.target.value = '';
   if (!files.length){ setStatus(GAME_DEF[curGame].prefix + '.pack.001of… という名前のファイルを選んでください。', 'err'); return; }
   const pre = files[0].name.slice(0, 2); const gidFor = Object.keys(GAME_DEF).find(k => GAME_DEF[k].prefix === pre);
@@ -1198,7 +1269,9 @@ async function startRoute(route, includeCommon, startAt, startLine){
   ctx.fillStyle='#000'; ctx.fillRect(0,0,cv.width,cv.height); shown = null; $('box').classList.add('off');
   play.route = route; play.common = includeCommon;
   play.steps = RT.expand(route, includeCommon, game.fileNames, curGame);
-  { const pr = progOf(route.id); if (startAt > 0 && pr && pr.sn && (!play.steps[startAt] || play.steps[startAt].s !== pr.sn)){ const k = play.steps.findIndex(x => x.s === pr.sn); if (k >= 0) startAt = k; } } // keep resume position valid when the scene list changed
+  if (play.steps.some(x => x.dispatch)){ $('prog').textContent = '準備中…'; await new Promise(r => setTimeout(r, 30)); play.steps = await E.Runner.flatten(game, play.steps); if (token !== curToken) return; }
+  { const pr = progOf(route.id); // a saved position is matched by scene name, in case the scene list changed since it was saved
+    if (startAt > 0 && pr && pr.sn && pr.step === startAt && (!play.steps[startAt] || play.steps[startAt].s !== pr.sn)){ const k = play.steps.findIndex(x => x.s === pr.sn); if (k >= 0) startAt = k; } }
   const runner = new E.Runner(game, makeHost(token)); play.runner = runner;
   try{
     await runner.runSteps(play.steps, (i, st) => {
