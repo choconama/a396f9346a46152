@@ -6,11 +6,11 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="MLビューア">
+<meta name="apple-mobile-web-app-title" content="LHビューア">
 <meta name="theme-color" content="#141218">
 <link rel="manifest" href="../manifest.webmanifest">
 <link rel="apple-touch-icon" href="../icon-180.png">
-<title>MLビューア</title>
+<title>LHビューア</title>
 <style>
 :root{--fs:1;
   --bg:#141218; --panel:#1e1b24; --panel2:#27232f; --line:#3a3444; --text:#ece8f1; --muted:#a79fb3;
@@ -114,7 +114,7 @@ html,body{-webkit-text-size-adjust:100%;touch-action:manipulation}
 <body>
 
 <div id="setup">
-  <h1>MLビューア <small>選択肢なしでルートを流し見</small></h1>
+  <h1>LHビューア <small>選択肢なしでルートを流し見</small></h1>
   <p class="lead">データは一度読み込めば、この端末の中に保存されてオフラインで再生できます。どこにも送信しません。</p>
 
   <a class="backlink" href="../">← 作品選択へ戻る</a>
@@ -817,7 +817,7 @@ let game = null, selected = null;
 
 // ---------------------------------------------------------------- data storage (IndexedDB, parts kept as Blobs)
 const GAME_DEF = { love: { db: 'lhviewer', prefix: 'lh' }, mama: { db: 'lhviewer-mama', prefix: 'mh' } };
-const ONLY = 'mama';
+const ONLY = 'love';
 let curGame = ONLY || 'love';
 const loaded = {};
 const IDBS = {};

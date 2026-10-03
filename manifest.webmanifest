@@ -1,6 +1,6 @@
 {
- "name": "LHビューア",
- "short_name": "LHビューア",
+ "name": "流し見ビューア",
+ "short_name": "流し見",
  "start_url": "./",
  "scope": "./",
  "display": "standalone",
